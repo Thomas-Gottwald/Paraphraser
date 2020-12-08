@@ -97,7 +97,7 @@ class ParaphrasePipeline():
         # DataFrame
         # N times each replace index
         indexArrays = [[replace_ids[i//M] for i in range(N*M)],
-                    []]
+                       []]
         dfData = {'token_str' : [], 'score' : [], 'state' : []}
 
         if replace_direct == False:
@@ -164,13 +164,16 @@ class ParaphrasePipeline():
 # main for testing
 if __name__ == "__main__":
 
-    originalText = "The English Wikipedia was the first Wikipedia edition and has remained the largest. It has pioneered many ideas as conventions, policies or features which were later adopted by Wikipedia editions in some of the other languages."
-
+    # originalText = "The English Wikipedia was the first Wikipedia edition and has remained the largest. It has pioneered many ideas as conventions, policies or features which were later adopted by Wikipedia editions in some of the other languages."
+    
+    filename = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/wikipedia/og/339-ORIG-2.txt"
+    with open(filename) as file:
+        originalText = file.read()
 
     unmasker = pipeline('fill-mask', model='roberta-large')
     paraphraser = ParaphrasePipeline(unmasker)
 
-    spun_text, df = paraphraser.parapherase(originalText, mark_replace=True)
+    spun_text, df = paraphraser.parapherase(originalText, mask=0.1, range_replace=(1, 4), mark_replace=True)
 
     print(spun_text)
     print(df)
