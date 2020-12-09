@@ -3,6 +3,7 @@ import pandas as pd
 import torch as torch
 from transformers import pipeline
 from transformers.pipelines import FillMaskPipeline
+from transformers import BatchEncoding
 from transformers.utils import logging
 
 import random as random
@@ -11,6 +12,7 @@ import copy as copy
 logger = logging.get_logger(__name__)
 
 # TODO: Add comments and ether block the use of tensorflow or make it also runeblis
+# TODO: Make the DataFrame an option
 class ParaphrasePipeline():
     
     def __init__(
@@ -21,7 +23,7 @@ class ParaphrasePipeline():
         self.model = unmasker.model
         self.model.resize_token_embeddings(len(self.tokenizer))
 
-    def unmasker_postproc(self, outputs, inputs, targets=None, top_k=5):
+    def unmasker_postproc(self, outputs, inputs, window_ids=None, targets=None, top_k=5):
         results = []
         batch_size = outputs.size(0)
 
@@ -49,11 +51,16 @@ class ParaphrasePipeline():
             input_ids = inputs["input_ids"][i]
             result = []
 
-            masked_index = torch.nonzero(input_ids == self.tokenizer.mask_token_id, as_tuple=False)
+            masked_index_in = torch.nonzero(input_ids == self.tokenizer.mask_token_id, as_tuple=False)
+            # check if the input was given to the model in a reduced form (with the window_ids)
+            if window_ids == None:
+                masked_index_out = masked_index_in
+            else:
+                masked_index_out = torch.nonzero(window_ids[i] == self.tokenizer.mask_token_id, as_tuple=False)
 
             # Fill mask pipeline supports only one ${mask_token} per sample
             # self.ensure_exactly_one_mask_token(masked_index.numpy())
-            logits = outputs[i, masked_index.item(), :]
+            logits = outputs[i, masked_index_out.item(), :]
             probs = logits.softmax(dim=0)
             if targets is None:
                 values, predictions = probs.topk(top_k)
@@ -65,7 +72,7 @@ class ParaphrasePipeline():
 
             for v, p in zip(values.tolist(), predictions.tolist()):
                 tokens = copy.deepcopy(input_ids.numpy())
-                tokens[masked_index] = p
+                tokens[masked_index_in] = p
                 # Filter padding out:
                 tokens = tokens[np.where(tokens != self.tokenizer.pad_token_id)]
                 result.append(
@@ -84,7 +91,19 @@ class ParaphrasePipeline():
             return results[0]
         return results
 
-    def parapherase(self, og_text, mask=0.25, range_replace=(0, 5), use_score=False, replace_direct=False, mark_replace=False):
+    def input_window(self, i, windowSize, textSize, input):
+        shift = min(max(0, i+1 - windowSize // 2), textSize - windowSize)
+
+        window_tensors = [input['input_ids'][:,0], input['input_ids'][0, 1+shift:511+shift], input['input_ids'][:,-1]]
+        window_input_ids = torch.cat(window_tensors).view(1, -1)
+        window_atten_tensors = [input['attention_mask'][:,0], input['attention_mask'][0, 1+shift:511+shift], input['attention_mask'][:,-1]]
+        window_attention_mask = torch.cat(window_atten_tensors).view(1, -1)
+
+        return BatchEncoding({'input_ids' : window_input_ids, 'attention_mask' : window_attention_mask})
+
+        
+
+    def parapherase(self, og_text, mask=0.25, range_replace=(0, 5), use_score=False, replace_direct=False, mark_replace=False, startEndToken=False):
         encode_input = self.tokenizer(og_text, return_tensors='pt')
         input_ids = encode_input['input_ids'][0]
 
@@ -107,8 +126,15 @@ class ParaphrasePipeline():
                 tmp = copy.deepcopy(input_ids[i])
             input_ids[i] = self.tokenizer.mask_token_id
             
-            output_tensor = self.model(**encode_input)[0]
-            output = self.unmasker_postproc(output_tensor, encode_input, top_k=range_replace[1])
+            if length > 512:
+                # input is to long for the model
+                small_input = self.input_window(i, 512, length, encode_input)
+                output_tensor = self.model(**small_input)[0]
+                output = self.unmasker_postproc(output_tensor, encode_input,
+                                                window_ids=small_input['input_ids'], top_k=range_replace[1])
+            else:
+                output_tensor = self.model(**encode_input)[0]
+                output = self.unmasker_postproc(output_tensor, encode_input, top_k=range_replace[1])
 
             # add Data for DataFrame
             indexArrays[1].extend([o['token'] for o in output])
@@ -150,10 +176,14 @@ class ParaphrasePipeline():
                 count += 1
         newText = self.tokenizer.decode(tokens)
 
-        startToken = "AddedToken(content='<s>', single_word=False, lstrip=False, rstrip=False, normalized=True)"
-        endToken = "AddedToken(content='</s>', single_word=False, lstrip=False, rstrip=False, normalized=True)"
-        newText = newText.replace(startToken, '<s>')
-        newText = newText.replace(endToken, '</s>')
+        startToken = "AddedToken(content='<s>', single_word=False, lstrip=False, rstrip=False, normalized=True) "
+        endToken = " AddedToken(content='</s>', single_word=False, lstrip=False, rstrip=False, normalized=True)"
+        if startEndToken:
+            newText = newText.replace(startToken, '<s> ')
+            newText = newText.replace(endToken, ' </s>')
+        else:
+            newText = newText.replace(startToken, '')
+            newText = newText.replace(endToken, '')
 
         # set DataFrame
         dfIndex = pd.MultiIndex.from_arrays(indexArrays, names=['index', 'token'])
