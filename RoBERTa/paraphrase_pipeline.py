@@ -12,7 +12,6 @@ import copy as copy
 logger = logging.get_logger(__name__)
 
 # TODO: Add comments and ether block the use of tensorflow or make it also runeblis
-# TODO: Make the DataFrame an option
 class ParaphrasePipeline():
     
     def __init__(
@@ -103,7 +102,7 @@ class ParaphrasePipeline():
 
         
 
-    def parapherase(self, og_text, mask=0.25, range_replace=(0, 5), use_score=False, replace_direct=False, mark_replace=False, startEndToken=False):
+    def parapherase(self, og_text, mask=0.25, range_replace=(0, 5), use_score=False, replace_direct=False, mark_replace=False, return_df=False, startEndToken=False):
         encode_input = self.tokenizer(og_text, return_tensors='pt')
         input_ids = encode_input['input_ids'][0]
 
@@ -113,11 +112,12 @@ class ParaphrasePipeline():
 
         replace_ids = random.sample([i for i in range(1, length - 1)], k=N)
 
-        # DataFrame
-        # N times each replace index
-        indexArrays = [[replace_ids[i//M] for i in range(N*M)],
-                       []]
-        dfData = {'token_str' : [], 'score' : [], 'state' : []}
+        if return_df:
+            # DataFrame
+            # N times each replace index
+            indexArrays = [[replace_ids[i//M] for i in range(N*M)],
+                           []]
+            dfData = {'token_str' : [], 'score' : [], 'state' : []}
 
         if replace_direct == False:
             replace = []
@@ -136,22 +136,25 @@ class ParaphrasePipeline():
                 output_tensor = self.model(**encode_input)[0]
                 output = self.unmasker_postproc(output_tensor, encode_input, top_k=range_replace[1])
 
-            # add Data for DataFrame
-            indexArrays[1].extend([o['token'] for o in output])
-            dfData['token_str'].extend([o['token_str'] for o in output])
-            dfData['score'].extend([o['score'] for o in output])
-            dfData['state'].extend(['ignored' if j < range_replace[0] else 'looked' for j in range(M)])
-
             if use_score:
                 scores = []
                 for prop in output[range_replace[0]:]:
                     scores.append(prop['score'])
                 chosen = random.choices([j for j in range(range_replace[0], len(output))], weights=scores, k=1)[0]
-                newToken = output[chosen]
-                dfData['state'][k*M+chosen] = 'chosen'
+                # newToken = output[chosen]
+                # dfData['state'][k*M+chosen] = 'chosen'
             else:
                 chosen = random.sample([j for j in range(range_replace[0], len(output))], k=1)[0]
-                newToken = output[chosen]
+                # newToken = output[chosen]
+                # dfData['state'][k*M+chosen] = 'chosen'
+
+            newToken = output[chosen]
+            if return_df:
+                # add Data for DataFrame
+                indexArrays[1].extend([o['token'] for o in output])
+                dfData['token_str'].extend([o['token_str'] for o in output])
+                dfData['score'].extend([o['score'] for o in output])
+                dfData['state'].extend(['ignored' if j < range_replace[0] else 'looked' for j in range(M)])
                 dfData['state'][k*M+chosen] = 'chosen'
 
             if replace_direct:
@@ -185,25 +188,32 @@ class ParaphrasePipeline():
             newText = newText.replace(startToken, '')
             newText = newText.replace(endToken, '')
 
-        # set DataFrame
-        dfIndex = pd.MultiIndex.from_arrays(indexArrays, names=['index', 'token'])
-        df = pd.DataFrame(dfData, index=dfIndex)
+        if return_df:
+            # set DataFrame
+            dfIndex = pd.MultiIndex.from_arrays(indexArrays, names=['index', 'token'])
+            df = pd.DataFrame(dfData, index=dfIndex)
 
-        return newText, df
+            return newText, df
+        else:
+            return newText
 
 # main for testing
 if __name__ == "__main__":
 
-    # originalText = "The English Wikipedia was the first Wikipedia edition and has remained the largest. It has pioneered many ideas as conventions, policies or features which were later adopted by Wikipedia editions in some of the other languages."
+    originalText = "The English Wikipedia was the first Wikipedia edition and has remained the largest. It has pioneered many ideas as conventions, policies or features which were later adopted by Wikipedia editions in some of the other languages."
     
-    filename = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/wikipedia/og/339-ORIG-2.txt"
-    with open(filename) as file:
-        originalText = file.read()
+    # filename = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/wikipedia/og/339-ORIG-2.txt"
+    # with open(filename) as file:
+    #     originalText = file.read()
 
     unmasker = pipeline('fill-mask', model='roberta-large')
     paraphraser = ParaphrasePipeline(unmasker)
 
-    spun_text, df = paraphraser.parapherase(originalText, mask=0.1, range_replace=(1, 4), mark_replace=True)
+    spun_text, df = paraphraser.parapherase(originalText, mask=0.1, range_replace=(1, 4), mark_replace=True, return_df=True)
 
     print(spun_text)
     print(df)
+
+    spun_text = paraphraser.parapherase(originalText, mask=0.1, range_replace=(1, 4), mark_replace=True)
+
+    print(spun_text)

@@ -1,40 +1,31 @@
 import paraphrase_pipeline as ppipe
 from transformers import pipeline
-from os import listdir
-from os.path import isfile, join
+import os
 
 unmasker = pipeline('fill-mask', model='roberta-large')
 paraphraser = ppipe.ParaphrasePipeline(unmasker)
 
-ogpath = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/thesis/og"
-sppath = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/thesis/sp"
-ogfiles = [f for f in listdir(ogpath) if isfile(join(ogpath, f))]
+ogpath = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/thesis/ogUTF-8"
+sppath = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/thesis"
+ogfiles = [f for f in os.listdir(ogpath) if os.path.isfile(os.path.join(ogpath, f))]
 
-# print(ogfiles[1])
-# with open(join(ogpath, ogfiles[1]), 'r', encoding='latin-1') as file:
-#     originalText = file.read()
-# print(originalText)
+mask_pc = 10 # 10%, 20%, 30%
+sp_dir = "sp({}%)".format(mask_pc)
 
-# print(ogfiles[4])
-# with open(join(ogpath, ogfiles[4]), 'r', encoding='latin-1') as file:
-#     originalText = file.read()
-# print(originalText)
+sppath = os.path.join(sppath, sp_dir)
+if not os.path.exists(sppath):
+    os.makedirs(sppath)
 
-# quit()
-
-N = 10
+N = 1
 log_val = 2
-mask_pc = 10
 for i in range(N):
     if i % log_val == 0:
         print('[{} / {}]'.format(i+1, N))
-    with open(join(ogpath, ogfiles[i]), encoding='latin-1') as file:
+    with open(os.path.join(ogpath, ogfiles[i]), encoding='utf-8') as file:
         originalText = file.read()
-    spun_text, df = paraphraser.parapherase(originalText, mask=1/mask_pc, range_replace=(1, 4))
-    spun_text = spun_text.replace('<s> ', '')
-    spun_text = spun_text.replace(' </s>', '')
-    spunfile = ogfiles[i].replace('ORIG', 'SPUN({}%)'.format(mask_pc))
-    f = open(join(sppath, spunfile), 'w', encoding='utf-8')
+    spun_text = paraphraser.parapherase(originalText, mask=1/mask_pc, range_replace=(1, 4))
+    spunfile = ogfiles[i].replace('ORIG', 'SPUN')
+    f = open(os.path.join(sppath, spunfile), 'w', encoding='utf-8', newline='\n')
     f.write(spun_text)
     f.close()
 
