@@ -3,6 +3,7 @@ import pandas as pd
 import torch as torch
 from transformers import pipeline
 from transformers.pipelines import FillMaskPipeline
+from transformers import AutoTokenizer, AutoModelForMaskedLM
 from transformers import BatchEncoding
 from transformers.utils import logging
 
@@ -20,7 +21,8 @@ class ParaphrasePipeline():
     ):
         self.tokenizer = unmasker.tokenizer
         self.model = unmasker.model
-        self.model.resize_token_embeddings(len(self.tokenizer))
+        self.device = unmasker.device
+        # self.model.resize_token_embeddings(len(self.tokenizer))
 
     def unmasker_postproc(self, outputs, inputs, window_ids=None, targets=None, top_k=5):
         results = []
@@ -100,7 +102,17 @@ class ParaphrasePipeline():
 
         return BatchEncoding({'input_ids' : window_input_ids, 'attention_mask' : window_attention_mask})
 
-        
+    def ensure_tensor_on_device(self, **inputs):
+        """
+        Ensure PyTorch tensors are on the specified device.
+
+        Args:
+            inputs (keyword arguments that should be :obj:`torch.Tensor`): The tensors to place on :obj:`self.device`.
+
+        Return:
+            :obj:`Dict[str, torch.Tensor]`: The same as :obj:`inputs` but on the proper device.
+        """
+        return {name: tensor.to(self.device) for name, tensor in inputs.items()}
 
     def parapherase(self, og_text, mask=0.25, range_replace=(0, 5), use_score=False, replace_direct=False, mark_replace=False, return_df=False, startEndToken=False):
         encode_input = self.tokenizer(og_text, return_tensors='pt')
@@ -129,11 +141,13 @@ class ParaphrasePipeline():
             if length > 512:
                 # input is to long for the model
                 small_input = self.input_window(i, 512, length, encode_input)
-                output_tensor = self.model(**small_input)[0]
+                small_input = self.ensure_tensor_on_device(**small_input)
+                output_tensor = self.model(**small_input)[0].cpu()
                 output = self.unmasker_postproc(output_tensor, encode_input,
                                                 window_ids=small_input['input_ids'], top_k=range_replace[1])
             else:
-                output_tensor = self.model(**encode_input)[0]
+                encode_input = self.ensure_tensor_on_device(**encode_input)
+                output_tensor = self.model(**encode_input)[0].cpu()
                 output = self.unmasker_postproc(output_tensor, encode_input, top_k=range_replace[1])
 
             if use_score:
@@ -141,14 +155,10 @@ class ParaphrasePipeline():
                 for prop in output[range_replace[0]:]:
                     scores.append(prop['score'])
                 chosen = random.choices([j for j in range(range_replace[0], len(output))], weights=scores, k=1)[0]
-                # newToken = output[chosen]
-                # dfData['state'][k*M+chosen] = 'chosen'
             else:
                 chosen = random.sample([j for j in range(range_replace[0], len(output))], k=1)[0]
-                # newToken = output[chosen]
-                # dfData['state'][k*M+chosen] = 'chosen'
-
             newToken = output[chosen]
+            
             if return_df:
                 # add Data for DataFrame
                 indexArrays[1].extend([o['token'] for o in output])
@@ -206,7 +216,12 @@ if __name__ == "__main__":
     # with open(filename) as file:
     #     originalText = file.read()
 
-    unmasker = pipeline('fill-mask', model='roberta-large')
+    tokenizer = AutoTokenizer.from_pretrained("roberta-large")
+    model = AutoModelForMaskedLM.from_pretrained("roberta-large")
+    model.resize_token_embeddings(len(tokenizer))
+    unmasker = FillMaskPipeline(model=model, tokenizer=tokenizer, use_fast=True, device=-1)
+
+    # unmasker = pipeline('fill-mask', model='roberta-large')
     paraphraser = ParaphrasePipeline(unmasker)
 
     spun_text, df = paraphraser.parapherase(originalText, mask=0.1, range_replace=(1, 4), mark_replace=True, return_df=True)

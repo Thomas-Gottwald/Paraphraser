@@ -1,8 +1,15 @@
 import paraphrase_pipeline as ppipe
 from transformers import pipeline
+from transformers.pipelines import FillMaskPipeline
+from transformers import AutoTokenizer, AutoModelForMaskedLM
 import os
 
-unmasker = pipeline('fill-mask', model='roberta-large')
+
+tokenizer = AutoTokenizer.from_pretrained("roberta-large")
+model = AutoModelForMaskedLM.from_pretrained("roberta-large")
+model.resize_token_embeddings(len(tokenizer))
+unmasker = FillMaskPipeline(model=model, tokenizer=tokenizer, use_fast=True, device=-1)
+# unmasker = pipeline('fill-mask', model='roberta-large')
 paraphraser = ppipe.ParaphrasePipeline(unmasker)
 
 ogpath = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/thesis/ogUTF-8"
