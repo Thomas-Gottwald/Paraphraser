@@ -18,11 +18,13 @@ class ParaphrasePipeline():
     def __init__(
         self,
         unmasker : FillMaskPipeline,
+        input_window_size = 512
     ):
         self.tokenizer = unmasker.tokenizer
         self.model = unmasker.model
         self.device = unmasker.device
         # self.model.resize_token_embeddings(len(self.tokenizer))
+        self.input_window_size = min(512, input_window_size)
 
     def unmasker_postproc(self, outputs, inputs, window_ids=None, targets=None, top_k=5):
         results = []
@@ -72,7 +74,7 @@ class ParaphrasePipeline():
                 predictions = target_inds[sort_inds]
 
             for v, p in zip(values.tolist(), predictions.tolist()):
-                tokens = copy.deepcopy(input_ids.numpy())
+                tokens = copy.deepcopy(input_ids.cpu().numpy())
                 tokens[masked_index_in] = p
                 # Filter padding out:
                 tokens = tokens[np.where(tokens != self.tokenizer.pad_token_id)]
@@ -95,9 +97,9 @@ class ParaphrasePipeline():
     def input_window(self, i, windowSize, textSize, input):
         shift = min(max(0, i+1 - windowSize // 2), textSize - windowSize)
 
-        window_tensors = [input['input_ids'][:,0], input['input_ids'][0, 1+shift:511+shift], input['input_ids'][:,-1]]
+        window_tensors = [input['input_ids'][:,0], input['input_ids'][0, 1+shift:windowSize-1+shift], input['input_ids'][:,-1]]
         window_input_ids = torch.cat(window_tensors).view(1, -1)
-        window_atten_tensors = [input['attention_mask'][:,0], input['attention_mask'][0, 1+shift:511+shift], input['attention_mask'][:,-1]]
+        window_atten_tensors = [input['attention_mask'][:,0], input['attention_mask'][0, 1+shift:windowSize-1+shift], input['attention_mask'][:,-1]]
         window_attention_mask = torch.cat(window_atten_tensors).view(1, -1)
 
         return BatchEncoding({'input_ids' : window_input_ids, 'attention_mask' : window_attention_mask})
@@ -119,7 +121,7 @@ class ParaphrasePipeline():
         input_ids = encode_input['input_ids'][0]
 
         length = input_ids.size()[0]
-        N = int(mask * length)# N tokens get replacest
+        N = max(1, int(mask * length))# N tokens get replacest
         M = range_replace[1]# the unmasker surjest M tokens
 
         replace_ids = random.sample([i for i in range(1, length - 1)], k=N)
@@ -138,16 +140,18 @@ class ParaphrasePipeline():
                 tmp = copy.deepcopy(input_ids[i])
             input_ids[i] = self.tokenizer.mask_token_id
             
-            if length > 512:
+            if length > self.input_window_size:
                 # input is to long for the model
-                small_input = self.input_window(i, 512, length, encode_input)
-                small_input = self.ensure_tensor_on_device(**small_input)
-                output_tensor = self.model(**small_input)[0].cpu()
+                small_input = self.input_window(i, self.input_window_size, length, encode_input)
+                with torch.no_grad():
+                    small_input = self.ensure_tensor_on_device(**small_input)
+                    output_tensor = self.model(**small_input)[0].cpu()
                 output = self.unmasker_postproc(output_tensor, encode_input,
-                                                window_ids=small_input['input_ids'], top_k=range_replace[1])
+                                                window_ids=small_input['input_ids'].cpu(), top_k=range_replace[1])
             else:
-                encode_input = self.ensure_tensor_on_device(**encode_input)
-                output_tensor = self.model(**encode_input)[0].cpu()
+                with torch.no_grad():
+                    encode_input = self.ensure_tensor_on_device(**encode_input)
+                    output_tensor = self.model(**encode_input)[0].cpu()
                 output = self.unmasker_postproc(output_tensor, encode_input, top_k=range_replace[1])
 
             if use_score:
@@ -210,24 +214,26 @@ class ParaphrasePipeline():
 # main for testing
 if __name__ == "__main__":
 
-    originalText = "The English Wikipedia was the first Wikipedia edition and has remained the largest. It has pioneered many ideas as conventions, policies or features which were later adopted by Wikipedia editions in some of the other languages."
-    
+    # originalText = "The English Wikipedia was the first Wikipedia edition and has remained the largest. It has pioneered many ideas as conventions, policies or features which were later adopted by Wikipedia editions in some of the other languages."
+    # originalText = "Hello I'm a good model."
+
     # filename = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/wikipedia/og/339-ORIG-2.txt"
-    # with open(filename) as file:
-    #     originalText = file.read()
+    filename = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/thesis/ogUTF-8/1-ORIG-18.txt"
+    with open(filename, 'r', encoding='utf-8') as file:
+        originalText = file.read()
 
     tokenizer = AutoTokenizer.from_pretrained("roberta-large")
     model = AutoModelForMaskedLM.from_pretrained("roberta-large")
     model.resize_token_embeddings(len(tokenizer))
-    unmasker = FillMaskPipeline(model=model, tokenizer=tokenizer, use_fast=True, device=-1)
+    unmasker = FillMaskPipeline(model=model, tokenizer=tokenizer, use_fast=True, device=0)
 
     # unmasker = pipeline('fill-mask', model='roberta-large')
-    paraphraser = ParaphrasePipeline(unmasker)
+    paraphraser = ParaphrasePipeline(unmasker, input_window_size=200)
 
-    spun_text, df = paraphraser.parapherase(originalText, mask=0.1, range_replace=(1, 4), mark_replace=True, return_df=True)
+    # spun_text, df = paraphraser.parapherase(originalText, mask=0.1, range_replace=(1, 4), mark_replace=True, return_df=True)
 
-    print(spun_text)
-    print(df)
+    # print(spun_text)
+    # print(df)
 
     spun_text = paraphraser.parapherase(originalText, mask=0.1, range_replace=(1, 4), mark_replace=True)
 
