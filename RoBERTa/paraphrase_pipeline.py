@@ -12,7 +12,7 @@ import copy as copy
 
 logger = logging.get_logger(__name__)
 
-# TODO: Add comments and ether block the use of tensorflow or make it also runeblis
+# TODO: Add comments and ether block the use of tensorflow or make it also runable
 class ParaphrasePipeline():
     
     def __init__(
@@ -193,8 +193,8 @@ class ParaphrasePipeline():
                 count += 1
         newText = self.tokenizer.decode(tokens)
 
-        startToken = "AddedToken(content='<s>', single_word=False, lstrip=False, rstrip=False, normalized=True) "
-        endToken = " AddedToken(content='</s>', single_word=False, lstrip=False, rstrip=False, normalized=True)"
+        startToken = self.tokenizer.bos_token
+        endToken = self.tokenizer.eos_token
         if startEndToken:
             newText = newText.replace(startToken, '<s> ')
             newText = newText.replace(endToken, ' </s>')
@@ -217,15 +217,15 @@ if __name__ == "__main__":
     # originalText = "The English Wikipedia was the first Wikipedia edition and has remained the largest. It has pioneered many ideas as conventions, policies or features which were later adopted by Wikipedia editions in some of the other languages."
     # originalText = "Hello I'm a good model."
 
-    # filename = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/wikipedia/og/339-ORIG-2.txt"
-    filename = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/thesis/ogUTF-8/1-ORIG-18.txt"
+    # filename = r"./Paraphraser/data/wikipedia/og/339-ORIG-2.txt"
+    filename = r"./Paraphraser/data/thesis/ogUTF-8/1-ORIG-18.txt"
     with open(filename, 'r', encoding='utf-8') as file:
         originalText = file.read()
 
     tokenizer = AutoTokenizer.from_pretrained("roberta-large")
     model = AutoModelForMaskedLM.from_pretrained("roberta-large")
     model.resize_token_embeddings(len(tokenizer))
-    unmasker = FillMaskPipeline(model=model, tokenizer=tokenizer, use_fast=True, device=0)
+    unmasker = FillMaskPipeline(model=model, tokenizer=tokenizer, device=0)
 
     # unmasker = pipeline('fill-mask', model='roberta-large')
     paraphraser = ParaphrasePipeline(unmasker, input_window_size=200)

@@ -1,14 +1,14 @@
 from os import listdir
 from os.path import isfile, join
 # arxiv
-# ogpath = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/arxiv/og"
-# utf8path = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/arxiv/ogUTF-8"
+# ogpath = r"./Paraphraser/data/arxiv/og"
+# utf8path = r"./Paraphraser/data/arxiv/ogUTF-8"
 # thesis
-ogpath = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/thesis/og"
-utf8path = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/thesis/ogUTF-8"
+# ogpath = r"./Paraphraser/data/thesis/og"
+# utf8path = r"./Paraphraser/data/thesis/ogUTF-8"
 # wikipedia
-# ogpath = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/wikipedia/og"
-# utf8path = r"./Applied Natural Language Processing/Projekt/Paraphraser/data/wikipedia/ogUTF-8"
+ogpath = r"./Paraphraser/data/wikipedia/og"
+utf8path = r"./Paraphraser/data/wikipedia/ogUTF-8"
 
 ogfiles = [f for f in listdir(ogpath) if isfile(join(ogpath, f))]
 
