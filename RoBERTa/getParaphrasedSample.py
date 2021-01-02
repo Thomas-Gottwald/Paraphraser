@@ -38,7 +38,7 @@ def spin_text(paraphraser, og_path, sp_path, mask_pc=0.1, range_replace=(1, 4)):
 
 # the size of the sample
 N = 5
-# from wich data should be sampled
+# from witch data should be sampled
 data = [Data.THESIS]
 # witch amounts (in %) of paraphrased words should the sample text contain
 para_pc = {0, 10, 20, 30}
