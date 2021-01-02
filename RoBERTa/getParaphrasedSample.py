@@ -6,6 +6,7 @@ from transformers import AutoTokenizer, AutoModelForMaskedLM
 import os
 from enum import Enum
 import random as random
+from datetime import datetime
 
 class Data(Enum):
     THESIS = 1
@@ -41,6 +42,8 @@ N = 5
 data = [Data.THESIS]
 # witch amounts (in %) of paraphrased words should the sample text contain
 para_pc = {0, 10, 20, 30}
+# the name of the folder to stor this sample
+sampleFolder = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 # make sure that the original files are in the sample
 if 0 not in para_pc:
@@ -73,20 +76,27 @@ for i in range(N):
     sample_files.add((data[chose_data], chose_file))
 
 # creating the folder for the sample if not exits
-if not os.path.exists(path + "/data/sample"):
-    os.makedirs(path + "/data/sample")
+if not os.path.exists(path + "/data/sample/" + sampleFolder):
+    os.makedirs(path + "/data/sample/" + sampleFolder)
+
+# stores the information in witch order the text occur in the sample files 
+logInfo = []
 
 paraphraser = None
 # write the samples
 for d, sf in sample_files:
     # open the sample file
     sfile_name = sf.replace('ORIG', 'THESIS' if d == Data.THESIS else 'ARXIV' if d == Data.ARXIV else 'WIKIPEDIA')
-    sfile = open(path + "/data/sample/" + sfile_name, 'w', encoding='utf-8', newline='\n')
+    sfile = open(path + "/data/sample/" + sampleFolder + "/" + sfile_name, 'w', encoding='utf-8', newline='\n')
+
+    # information in witch order the text occur this sample file
+    sfileInfo = [sfile_name]
 
     # shuffle the oder of the percentages
     shuffle_pc = list(para_pc)
     random.shuffle(shuffle_pc)
     for pc in shuffle_pc:
+        sfileInfo.append(pc)# remember the percentage of replaced words
         if pc == 0:
             full_path = data_paths[data.index(d)] + "/ogUTF-8/" + sf
         else:
@@ -107,5 +117,15 @@ for d, sf in sample_files:
             sfile.write(file.read())
         sfile.write('\n\n' + 100*'-' + '\n\n')
 
+    logInfo.append(sfileInfo)
+
     # close the sample file
     sfile.close()
+
+# create the Info file where the information for the sample is stored
+with open(path + "/data/sample/" + sampleFolder + "/Info.txt", 'w', encoding='utf-8', newline='\n') as file:
+    for info in logInfo:
+        file.write(info[0] + '\n')
+        for i in range(1, len(info)):
+            file.write("    {}%\n".format(info[i]))
+        file.write('\n')

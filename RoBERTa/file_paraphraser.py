@@ -49,7 +49,7 @@ sppath = os.path.join(sppath, sp_dir)
 if not os.path.exists(sppath):
     os.makedirs(sppath)
 
-N = 5 #len(ogfiles)
+N = len(ogfiles)
 for i in tqdm(range(N)):
     with open(os.path.join(ogpath, ogfiles[i]), encoding='utf-8') as file:
         originalText = file.read()
