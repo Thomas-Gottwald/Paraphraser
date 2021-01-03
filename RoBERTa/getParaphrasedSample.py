@@ -43,7 +43,7 @@ data = [Data.THESIS]
 # witch amounts (in %) of paraphrased words should the sample text contain
 para_pc = {0, 10, 20, 30}
 # the name of the folder to stor this sample
-sampleFolder = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+sampleFolder = datetime.now().strftime("%Y-%m-%d %H_%M_%S")
 
 # make sure that the original files are in the sample
 if 0 not in para_pc:
@@ -54,11 +54,11 @@ path = get_local_path()
 data_paths = []
 for d in data:
     if d == Data.THESIS:
-        data_paths.append(path + "/data/thesis")
+        data_paths.append(os.path.join(path, *['data', 'thesis']))
     elif  data == Data.ARXIV:
-        data_paths.append(path + "/data/arxiv")
+        data_paths.append(os.path.join(path, *['data', 'arxiv']))
     elif data == Data.WIKIPEDIA:
-        data_paths.append(path + "/data/wikipedia")
+        data_paths.append(os.path.join(path, *['data', 'wikipedia']))
 if len(data_paths) == 0:
     print('data is not specificied!')
     quit()
@@ -66,7 +66,7 @@ if len(data_paths) == 0:
 # get the original text file names
 ogfiles = []
 for dp in data_paths:
-    ogfiles.append([f for f in os.listdir(dp + "/ogUTF-8") if os.path.isfile(os.path.join(dp + "/ogUTF-8", f))])
+    ogfiles.append([f for f in os.listdir(os.path.join(dp, 'ogUTF-8')) if os.path.isfile(os.path.join(dp, *['ogUTF-8', f]))])
 
 # chose the sample files
 sample_files = set()
@@ -76,8 +76,14 @@ for i in range(N):
     sample_files.add((data[chose_data], chose_file))
 
 # creating the folder for the sample if not exits
-if not os.path.exists(path + "/data/sample/" + sampleFolder):
-    os.makedirs(path + "/data/sample/" + sampleFolder)
+if not os.path.exists(os.path.join(path, *['data', 'sample', sampleFolder])):
+    os.makedirs(os.path.join(path, *['data', 'sample', sampleFolder]))
+
+# check if all the spun text directories exist (if not create them so that the spun files can be created)
+for dp in data_paths:
+    for pc in para_pc:
+        if pc != 0 and not os.path.exists(os.path.join(dp, 'sp({}%)'.format(pc))):
+            os.makedirs(os.path.join(dp, 'sp({}%)'.format(pc)))
 
 # stores the information in witch order the text occur in the sample files 
 logInfo = []
@@ -87,7 +93,7 @@ paraphraser = None
 for d, sf in sample_files:
     # open the sample file
     sfile_name = sf.replace('ORIG', 'THESIS' if d == Data.THESIS else 'ARXIV' if d == Data.ARXIV else 'WIKIPEDIA')
-    sfile = open(path + "/data/sample/" + sampleFolder + "/" + sfile_name, 'w', encoding='utf-8', newline='\n')
+    sfile = open(os.path.join(path, *['data', 'sample', sampleFolder, sfile_name]), 'w', encoding='utf-8', newline='\n')
 
     # information in witch order the text occur this sample file
     sfileInfo = [sfile_name]
@@ -98,18 +104,17 @@ for d, sf in sample_files:
     for pc in shuffle_pc:
         sfileInfo.append(pc)# remember the percentage of replaced words
         if pc == 0:
-            full_path = data_paths[data.index(d)] + "/ogUTF-8/" + sf
+            full_path = os.path.join(data_paths[data.index(d)], *['ogUTF-8', sf])
         else:
             spun_f = sf.replace('ORIG', 'SPUN')
-            full_path = data_paths[data.index(d)] + "/sp({}%)/".format(pc) + spun_f
+            full_path = os.path.join(data_paths[data.index(d)], *['sp({}%)'.format(pc), spun_f])
 
             # if the spun text dose not exist then create one
-            if not os.path.isfile(os.path.join(full_path)):
-                # sfile.write('is no file ' + full_path)
+            if not os.path.isfile(full_path):
                 if paraphraser == None:
                     paraphraser = get_paraphraser()
                 # spin the original text
-                og_path = data_paths[data.index(d)] + "/ogUTF-8/" + sf
+                og_path = os.path.join(data_paths[data.index(d)], *['ogUTF-8', sf])
                 spin_text(paraphraser, og_path, full_path, pc/100)
         
         # write into the sample file
@@ -123,7 +128,7 @@ for d, sf in sample_files:
     sfile.close()
 
 # create the Info file where the information for the sample is stored
-with open(path + "/data/sample/" + sampleFolder + "/Info.txt", 'w', encoding='utf-8', newline='\n') as file:
+with open(os.path.join(path, *['data', 'sample', sampleFolder, 'Info.txt']), 'w', encoding='utf-8', newline='\n') as file:
     for info in logInfo:
         file.write(info[0] + '\n')
         for i in range(1, len(info)):

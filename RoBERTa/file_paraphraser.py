@@ -28,14 +28,14 @@ paraphraser = ppipe.ParaphrasePipeline(unmasker, input_window_size=200)
 # setting the path to the data
 path = get_local_path()
 if data == Data.THESIS:
-    ogpath = path + "/data/thesis/ogUTF-8"
-    sppath = path + "/data/thesis"
+    ogpath = os.path.join(path, *['data', 'thesis', 'ogUTF-8'])
+    sppath = os.path.join(path, *['data', 'thesis'])
 elif  data == Data.ARXIV:
-    ogpath = path + "/data/arxiv/ogUTF-8"
-    sppath = path + "/data/arxiv"
+    ogpath = os.path.join(path, *['data', 'arxiv', 'ogUTF-8'])
+    sppath = os.path.join(path, *['data', 'arxiv'])
 elif data == Data.WIKIPEDIA:
-    ogpath = path + "/data/wikipedia/ogUTF-8"
-    sppath = path + "/data/wikipedia"
+    ogpath = os.path.join(path, *['data', 'wikipedia', 'ogUTF-8'])
+    sppath = os.path.join(path, *['data', 'wikipedia'])
 else:
     print('data is not specificied!')
     quit()
