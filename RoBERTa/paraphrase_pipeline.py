@@ -193,8 +193,10 @@ class ParaphrasePipeline():
                 count += 1
         newText = self.tokenizer.decode(tokens)
 
-        startToken = "AddedToken(content='<s>', single_word=False, lstrip=False, rstrip=False, normalized=True) "
-        endToken = " AddedToken(content='</s>', single_word=False, lstrip=False, rstrip=False, normalized=True)"
+        # startToken = "AddedToken(content='<s>', single_word=False, lstrip=False, rstrip=False, normalized=True) "
+        # endToken = " AddedToken(content='</s>', single_word=False, lstrip=False, rstrip=False, normalized=True)"
+        startToken = self.tokenizer.bos_token
+        endToken = self.tokenizer.eos_token
         if startEndToken:
             newText = newText.replace(startToken, '<s> ')
             newText = newText.replace(endToken, ' </s>')
