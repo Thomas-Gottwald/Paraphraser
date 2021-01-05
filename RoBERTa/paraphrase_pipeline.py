@@ -117,6 +117,31 @@ class ParaphrasePipeline():
         return {name: tensor.to(self.device) for name, tensor in inputs.items()}
 
     def parapherase(self, og_text, mask=0.25, range_replace=(0, 5), use_score=False, replace_direct=False, mark_replace=False, return_df=False, startEndToken=False):
+        """
+        paraphases the og_text
+
+        Args:
+            og_text: the original text to paraphrase
+            mask: amount of words that should be replaced by the paraphraser between 0 and 1 (at least on word will be replaced)
+            range_replace: a tuple of natural numbers (n, m) witch determent that for any token that is replaced m tokens will
+                be given by the unmasker and the fist n will be ignord for the choice of the new token
+            use_score: determents if for the choice of the the new tokens the scores given by the unmasker are used as weights
+            mark_replace: determents if in the returned spun text the new tokens are marked with square brackets
+            return_df: determents if a DataFrame with information of the paraphrase process is returned (more info on the DataFrame see below)
+            startEndToken: determents if the start and end tokens are removed for the spun text
+
+        Return:
+            :str: (when return_df=False) the paraphrased og_text
+            or
+            :str, DataFrame: (when return_df=True) the paraphrased og_text 
+                and a Pandas DataFrame witch contains for all replaced tokens
+                the index in the text in order of there repleacement and
+                for all by the unmasker returned candidats:
+                    - token: the token ID
+                    - token_str: the token string
+                    - score: the score given by the unmasker
+                    - state: where the token was ignored, looked or chosen by the paraphraser
+        """
         encode_input = self.tokenizer(og_text, return_tensors='pt')
         input_ids = encode_input['input_ids'][0]
 
@@ -214,13 +239,13 @@ class ParaphrasePipeline():
 # main for testing
 if __name__ == "__main__":
 
-    # originalText = "The English Wikipedia was the first Wikipedia edition and has remained the largest. It has pioneered many ideas as conventions, policies or features which were later adopted by Wikipedia editions in some of the other languages."
+    originalText = "The English Wikipedia was the first Wikipedia edition and has remained the largest. It has pioneered many ideas as conventions, policies or features which were later adopted by Wikipedia editions in some of the other languages."
     # originalText = "Hello I'm a good model."
 
     # filename = r"./Paraphraser/data/wikipedia/og/339-ORIG-2.txt"
-    filename = r"./Paraphraser/data/thesis/ogUTF-8/1-ORIG-18.txt"
-    with open(filename, 'r', encoding='utf-8') as file:
-        originalText = file.read()
+    # filename = r"./Paraphraser/data/thesis/ogUTF-8/1-ORIG-18.txt"
+    # with open(filename, 'r', encoding='utf-8') as file:
+    #     originalText = file.read()
 
     tokenizer = AutoTokenizer.from_pretrained("roberta-large")
     model = AutoModelForMaskedLM.from_pretrained("roberta-large")
@@ -230,11 +255,11 @@ if __name__ == "__main__":
     # unmasker = pipeline('fill-mask', model='roberta-large')
     paraphraser = ParaphrasePipeline(unmasker, input_window_size=200)
 
-    # spun_text, df = paraphraser.parapherase(originalText, mask=0.1, range_replace=(1, 4), mark_replace=True, return_df=True)
-
-    # print(spun_text)
-    # print(df)
-
-    spun_text = paraphraser.parapherase(originalText, mask=0.1, range_replace=(1, 4), mark_replace=True)
+    spun_text, df = paraphraser.parapherase(originalText, mask=0.1, range_replace=(1, 4), mark_replace=True, return_df=True)
 
     print(spun_text)
+    print(df)
+
+    # spun_text = paraphraser.parapherase(originalText, mask=0.1, range_replace=(1, 4), mark_replace=True)
+
+    # print(spun_text)
