@@ -126,6 +126,7 @@ class ParaphrasePipeline():
             range_replace: a tuple of natural numbers (n, m) witch determent that for any token that is replaced m tokens will
                 be given by the unmasker and the fist n will be ignord for the choice of the new token
             use_score: determents if for the choice of the the new tokens the scores given by the unmasker are used as weights
+            replace_direct: determents wether the tokens should be replaced directly or not
             mark_replace: determents if in the returned spun text the new tokens are marked with square brackets
             return_df: determents if a DataFrame with information of the paraphrase process is returned (more info on the DataFrame see below)
             startEndToken: determents if the start and end tokens are removed for the spun text
@@ -133,7 +134,7 @@ class ParaphrasePipeline():
         Return:
             :str: (when return_df=False) the paraphrased og_text
             or
-            :str, DataFrame: (when return_df=True) the paraphrased og_text 
+            :str, DataFrame: (when return_df=True) the paraphrased og_text
                 and a Pandas DataFrame witch contains for all replaced tokens
                 the index in the text in order of there repleacement and
                 for all by the unmasker returned candidats:
@@ -143,9 +144,10 @@ class ParaphrasePipeline():
                     - state: where the token was ignored, looked or chosen by the paraphraser
         """
         encode_input = self.tokenizer(og_text, return_tensors='pt')
-        input_ids = encode_input['input_ids'][0]
+        # input_ids = encode_input['input_ids'][0] TODO
 
-        length = input_ids.size()[0]
+        # length = input_ids.size()[0] TODO
+        length = encode_input['input_ids'][0].size()[0]
         N = max(1, int(mask * length))# N tokens get replacest
         M = range_replace[1]# the unmasker surjest M tokens
 
@@ -162,8 +164,10 @@ class ParaphrasePipeline():
             replace = []
         for k, i in enumerate(replace_ids):
             if replace_direct == False:
-                tmp = copy.deepcopy(input_ids[i])
-            input_ids[i] = self.tokenizer.mask_token_id
+                # tmp = copy.deepcopy(input_ids[i]) TODO
+                tmp = copy.deepcopy(encode_input['input_ids'][0][i])
+            # input_ids[i] = self.tokenizer.mask_token_id TODO
+            encode_input['input_ids'][0][i] = self.tokenizer.mask_token_id
             
             if length > self.input_window_size:
                 # input is to long for the model
@@ -197,16 +201,20 @@ class ParaphrasePipeline():
                 dfData['state'][k*M+chosen] = 'chosen'
 
             if replace_direct:
-                input_ids[i] = newToken['token']
+                # input_ids[i] = newToken['token'] TODO
+                encode_input['input_ids'][0][i] = newToken['token']
             else:
-                input_ids[i] = tmp
+                # input_ids[i] = tmp TODO
+                encode_input['input_ids'][0][i] = tmp
                 replace.append(newToken['token'])
 
         if replace_direct == False:
             for j, i in enumerate(replace_ids):
-                input_ids[i] = replace[j]
+                # input_ids[i] = replace[j] TODO
+                encode_input['input_ids'][0][i] = replace[j]
 
-        tokens = input_ids.numpy()
+        # tokens = input_ids.numpy() TODO
+        tokens = encode_input['input_ids'][0].cpu().numpy()
         # Filter padding out:
         tokens = tokens[np.where(tokens != self.tokenizer.pad_token_id)]
         if mark_replace:
