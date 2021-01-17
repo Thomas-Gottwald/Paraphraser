@@ -13,7 +13,7 @@ class Data(Enum):
     ARXIV = 2
     WIKIPEDIA = 3
 
-def get_paraphraser(device=0, input_window_size=200):
+def get_paraphraser(device=0, input_window_size=512):
     """
     returns the paraphraser object
     """
@@ -42,11 +42,11 @@ def spin_text(paraphraser, og_path, sp_path, mask_pc=0.1, add_args={'range_repla
 # determents whether the paraphrased text are loaded from the data if they exist or created new
 load_spun_form_data = False
 # additional arguments for the paraphraser (only used with load_spun_form_data = False)
-paraphrase_args = {'range_replace' : (1, 4), 'use_score': False, 'mark_replace': False, 'return_df': False, 'startEndToken': False}
+paraphrase_args = {'range_replace' : [(1, 4), (0, 4)], 'use_score': False, 'mark_replace': False, 'return_df': False, 'startEndToken': False}
 # the size of the sample
-N = 5
+N = 20
 # from witch data should be sampled
-data = [Data.THESIS]
+data = [Data.WIKIPEDIA]
 # witch amounts (in %) of paraphrased words should the sample text contain
 para_pc = {0, 10, 20, 30}
 # the name of the folder to stor this sample
@@ -62,9 +62,9 @@ data_paths = []
 for d in data:
     if d == Data.THESIS:
         data_paths.append(os.path.join(path, *['data', 'thesis']))
-    elif  data == Data.ARXIV:
+    elif  d == Data.ARXIV:
         data_paths.append(os.path.join(path, *['data', 'arxiv']))
-    elif data == Data.WIKIPEDIA:
+    elif d == Data.WIKIPEDIA:
         data_paths.append(os.path.join(path, *['data', 'wikipedia']))
 if len(data_paths) == 0:
     print('data is not specificied!')

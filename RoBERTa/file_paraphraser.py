@@ -23,7 +23,7 @@ model = AutoModelForMaskedLM.from_pretrained("roberta-large")
 model.resize_token_embeddings(len(tokenizer))
 unmasker = FillMaskPipeline(model=model, tokenizer=tokenizer, device=0)
 # unmasker = pipeline('fill-mask', model='roberta-large')
-paraphraser = ppipe.ParaphrasePipeline(unmasker, input_window_size=200)
+paraphraser = ppipe.ParaphrasePipeline(unmasker, input_window_size=512)
 
 # setting the path to the data
 path = get_local_path()
@@ -53,7 +53,7 @@ N = len(ogfiles)
 for i in tqdm(range(N)):
     with open(os.path.join(ogpath, ogfiles[i]), encoding='utf-8') as file:
         originalText = file.read()
-    spun_text = paraphraser.parapherase(originalText, mask=mask_pc/100, range_replace=(1, 4))
+    spun_text = paraphraser.parapherase(originalText, mask=mask_pc/100, range_replace=[(1, 4), (0, 4)])
     spunfile = ogfiles[i].replace('ORIG', 'SPUN')
     with open(os.path.join(sppath, spunfile), 'w', encoding='utf-8', newline='\n') as file:
         file.write(spun_text)

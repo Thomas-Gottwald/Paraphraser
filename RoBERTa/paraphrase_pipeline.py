@@ -123,8 +123,11 @@ class ParaphrasePipeline():
         Args:
             og_text: the original text to paraphrase
             mask: amount of words that should be replaced by the paraphraser between 0 and 1 (at least on word will be replaced)
-            range_replace: a tuple of natural numbers (n, m) witch determent that for any token that is replaced m tokens will
-                be given by the unmasker and the fist n will be ignord for the choice of the new token
+            range_replace: a tuple of natural numbers (n, m) or a list of such tuples
+                The tuples determent that for any token that is replaced m tokens will be given by the unmasker and
+                the fist n will be ignord for the choice of the new token.
+                If more tupels in a list are past then each tuple will be used equally often (by appling one after another and loping back
+                when the end of the list is reached)
             use_score: determents if for the choice of the the new tokens the scores given by the unmasker are used as weights
             replace_direct: determents wether the tokens should be replaced directly or not
             mark_replace: determents if in the returned spun text the new tokens are marked with square brackets
@@ -144,29 +147,26 @@ class ParaphrasePipeline():
                     - state: where the token was ignored, looked or chosen by the paraphraser
         """
         encode_input = self.tokenizer(og_text, return_tensors='pt')
-        # input_ids = encode_input['input_ids'][0] TODO
 
-        # length = input_ids.size()[0] TODO
         length = encode_input['input_ids'][0].size()[0]
         N = max(1, int(mask * length))# N tokens get replacest
-        M = range_replace[1]# the unmasker surjest M tokens
+
+        if type(range_replace) is tuple:
+            range_replace = [range_replace]
+        RRL = len(range_replace) # length of range_replace 
 
         replace_ids = random.sample([i for i in range(1, length - 1)], k=N)
 
         if return_df:
             # DataFrame
-            # N times each replace index
-            indexArrays = [[replace_ids[i//M] for i in range(N*M)],
-                           []]
+            indexArrays = [[], [], []]
             dfData = {'token_str' : [], 'score' : [], 'state' : []}
 
         if replace_direct == False:
             replace = []
         for k, i in enumerate(replace_ids):
             if replace_direct == False:
-                # tmp = copy.deepcopy(input_ids[i]) TODO
                 tmp = copy.deepcopy(encode_input['input_ids'][0][i])
-            # input_ids[i] = self.tokenizer.mask_token_id TODO
             encode_input['input_ids'][0][i] = self.tokenizer.mask_token_id
             
             if length > self.input_window_size:
@@ -176,44 +176,42 @@ class ParaphrasePipeline():
                     small_input = self.ensure_tensor_on_device(**small_input)
                     output_tensor = self.model(**small_input)[0].cpu()
                 output = self.unmasker_postproc(output_tensor, encode_input,
-                                                window_ids=small_input['input_ids'].cpu(), top_k=range_replace[1])
+                                                window_ids=small_input['input_ids'].cpu(), top_k=range_replace[k%RRL][1])
             else:
                 with torch.no_grad():
                     encode_input = self.ensure_tensor_on_device(**encode_input)
                     output_tensor = self.model(**encode_input)[0].cpu()
-                output = self.unmasker_postproc(output_tensor, encode_input, top_k=range_replace[1])
+                output = self.unmasker_postproc(output_tensor, encode_input, top_k=range_replace[k%RRL][1])
 
             if use_score:
                 scores = []
-                for prop in output[range_replace[0]:]:
+                for prop in output[range_replace[k%RRL][0]:]:
                     scores.append(prop['score'])
-                chosen = random.choices([j for j in range(range_replace[0], len(output))], weights=scores, k=1)[0]
+                chosen = random.choices([j for j in range(range_replace[k%RRL][0], len(output))], weights=scores, k=1)[0]
             else:
-                chosen = random.sample([j for j in range(range_replace[0], len(output))], k=1)[0]
+                chosen = random.sample([j for j in range(range_replace[k%RRL][0], len(output))], k=1)[0]
             newToken = output[chosen]
             
             if return_df:
                 # add Data for DataFrame
-                indexArrays[1].extend([o['token'] for o in output])
+                indexArrays[0].extend(range_replace[k%RRL][1]*[i])
+                indexArrays[1].extend(range_replace[k%RRL][1]*[self.tokenizer.decode(tmp)])
+                indexArrays[2].extend([o['token'] for o in output])
                 dfData['token_str'].extend([o['token_str'] for o in output])
                 dfData['score'].extend([o['score'] for o in output])
-                dfData['state'].extend(['ignored' if j < range_replace[0] else 'looked' for j in range(M)])
-                dfData['state'][k*M+chosen] = 'chosen'
+                dfData['state'].extend(['chosen' if j == chosen else 'ignored' if j < range_replace[k%RRL][0]
+                                        else 'looked' for j in range(range_replace[k%RRL][1])])
 
             if replace_direct:
-                # input_ids[i] = newToken['token'] TODO
                 encode_input['input_ids'][0][i] = newToken['token']
             else:
-                # input_ids[i] = tmp TODO
                 encode_input['input_ids'][0][i] = tmp
                 replace.append(newToken['token'])
 
         if replace_direct == False:
             for j, i in enumerate(replace_ids):
-                # input_ids[i] = replace[j] TODO
                 encode_input['input_ids'][0][i] = replace[j]
 
-        # tokens = input_ids.numpy() TODO
         tokens = encode_input['input_ids'][0].cpu().numpy()
         # Filter padding out:
         tokens = tokens[np.where(tokens != self.tokenizer.pad_token_id)]
@@ -221,8 +219,8 @@ class ParaphrasePipeline():
             replace_ids = np.sort(replace_ids)
             count = 0
             for i in replace_ids:
-                tokens = np.insert(tokens, i+(2*count), values=10975) # insert '['
-                tokens = np.insert(tokens, i+(2*count)+2, values=742) # insert ']'
+                tokens = np.insert(tokens, i+(2*count), values=self.tokenizer.encode('[')[1]) # insert '['
+                tokens = np.insert(tokens, i+(2*count)+2, values=self.tokenizer.encode(']')[1]) # insert ']'
                 count += 1
         newText = self.tokenizer.decode(tokens)
 
@@ -237,7 +235,7 @@ class ParaphrasePipeline():
 
         if return_df:
             # set DataFrame
-            dfIndex = pd.MultiIndex.from_arrays(indexArrays, names=['index', 'token'])
+            dfIndex = pd.MultiIndex.from_arrays(indexArrays, names=['index', 'og_token_str', 'token'])
             df = pd.DataFrame(dfData, index=dfIndex)
 
             return newText, df
@@ -261,9 +259,9 @@ if __name__ == "__main__":
     unmasker = FillMaskPipeline(model=model, tokenizer=tokenizer, device=0)
 
     # unmasker = pipeline('fill-mask', model='roberta-large')
-    paraphraser = ParaphrasePipeline(unmasker, input_window_size=200)
+    paraphraser = ParaphrasePipeline(unmasker, input_window_size=512)
 
-    spun_text, df = paraphraser.parapherase(originalText, mask=0.1, range_replace=(1, 4), mark_replace=True, return_df=True)
+    spun_text, df = paraphraser.parapherase(originalText, mask=0.1, range_replace=[(1, 4), (0, 3)], mark_replace=True, return_df=True)
 
     print(spun_text)
     print(df)
