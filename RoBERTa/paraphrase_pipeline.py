@@ -159,6 +159,9 @@ class ParaphrasePipeline():
 
         replace_ids = random.sample([i for i in range(1, length - 1)], k=N)
 
+        if not replace_direct:
+            replace_ids = np.sort(replace_ids)
+
         if return_df:
             # DataFrame
             indexArrays = [[], [], [], []]
@@ -236,7 +239,8 @@ class ParaphrasePipeline():
         # Filter padding out:
         tokens = tokens[np.where(tokens != self.tokenizer.pad_token_id)]
         if mark_replace:
-            replace_ids = np.sort(replace_ids)
+            if replace_direct:
+                replace_ids = np.sort(replace_ids)
             count = 0
             for i in replace_ids:
                 tokens = np.insert(tokens, i+(2*count), values=self.tokenizer.encode('[')[1]) # insert '['

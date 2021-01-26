@@ -129,7 +129,7 @@ class ParaphraseSpacy():
 
         mask = self.tokenizer.mask_token
 
-        replace_indices = np.array(random.sample([i for i in range(1, length - 1)], k=N))
+        replace_indices = np.sort(random.sample([i for i in range(1, length - 1)], k=N))
 
         if return_df:# Objects for DataFrame data
             indexArrays = [[], [], [], []]
