@@ -6,6 +6,7 @@ from transformers.pipelines import FillMaskPipeline
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 from transformers import BatchEncoding
 from transformers.utils import logging
+import nltk
 
 import random as random
 import copy as copy
@@ -18,13 +19,13 @@ class ParaphrasePipeline():
     def __init__(
         self,
         unmasker : FillMaskPipeline,
-        input_window_size = 512
+        input_window_size =  512
     ):
         self.tokenizer = unmasker.tokenizer
         self.model = unmasker.model
         self.device = unmasker.device
         # self.model.resize_token_embeddings(len(self.tokenizer))
-        self.input_window_size = min(512, input_window_size)
+        self.input_window_size = min(self.tokenizer.model_max_length, input_window_size)
 
     def unmasker_postproc(self, outputs, inputs, window_ids=None, targets=None, top_k=5):
         results = []
@@ -143,6 +144,7 @@ class ParaphrasePipeline():
                 for all by the unmasker returned candidats:
                     - token: the token ID
                     - token_str: the token string
+                    - POS: the POS tag of the token
                     - score: the score given by the unmasker
                     - state: where the token was ignored, looked or chosen by the paraphraser
         """
@@ -159,12 +161,18 @@ class ParaphrasePipeline():
 
         if return_df:
             # DataFrame
-            indexArrays = [[], [], []]
-            dfData = {'token_str' : [], 'score' : [], 'state' : []}
+            indexArrays = [[], [], [], []]
+            dfData = {'token_str' : [], 'POS' : [], 'score' : [], 'state' : []}
+            # Tokenization for POS-tags
+            tokenization = [self.tokenizer.decode(t) for t in encode_input['input_ids'][0,1:-1]]
 
         if replace_direct == False:
             replace = []
         for k, i in enumerate(replace_ids):
+            if return_df:
+                # Determent original POS of the to replace token
+                og_pos = nltk.pos_tag(tokenization)[i-1][1]
+
             if replace_direct == False:
                 tmp = copy.deepcopy(encode_input['input_ids'][0][i])
             encode_input['input_ids'][0][i] = self.tokenizer.mask_token_id
@@ -196,8 +204,20 @@ class ParaphrasePipeline():
                 # add Data for DataFrame
                 indexArrays[0].extend(range_replace[k%RRL][1]*[i])
                 indexArrays[1].extend(range_replace[k%RRL][1]*[self.tokenizer.decode(tmp)])
-                indexArrays[2].extend([o['token'] for o in output])
+                indexArrays[2].extend(range_replace[k%RRL][1]*[og_pos])
+                indexArrays[3].extend([o['token'] for o in output])
                 dfData['token_str'].extend([o['token_str'] for o in output])
+
+                for o in output:# Determent POS-tags for the suggested tokens
+                    tokenization[i-1] = o['token_str'].replace('Ġ', '')
+                    dfData['POS'].append(nltk.pos_tag(tokenization)[i-1][1])
+
+                # Correct the tokenization to the used encode_input
+                if replace_direct:
+                    tokenization[i-1] = newToken['token_str'].replace('Ġ', '')
+                else:
+                    tokenization[i-1] = self.tokenizer.decode(tmp).replace('Ġ', '')
+
                 dfData['score'].extend([o['score'] for o in output])
                 dfData['state'].extend(['chosen' if j == chosen else 'ignored' if j < range_replace[k%RRL][0]
                                         else 'looked' for j in range(range_replace[k%RRL][1])])
@@ -235,7 +255,7 @@ class ParaphrasePipeline():
 
         if return_df:
             # set DataFrame
-            dfIndex = pd.MultiIndex.from_arrays(indexArrays, names=['index', 'og_token_str', 'token'])
+            dfIndex = pd.MultiIndex.from_arrays(indexArrays, names=['index', 'og_token_str', 'og_POS', 'token'])
             df = pd.DataFrame(dfData, index=dfIndex)
 
             return newText, df
