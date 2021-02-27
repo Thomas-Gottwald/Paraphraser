@@ -9,6 +9,8 @@ from transformers import AutoConfig, AutoTokenizer, AutoModelForMaskedLM
 
 from getPath import get_local_path
 import os
+from datetime import datetime
+from typing import Optional
 
 def init_model(model_name_or_path: str, max_len: int):
     config = AutoConfig.from_pretrained(model_name_or_path)
@@ -20,7 +22,7 @@ def init_model(model_name_or_path: str, max_len: int):
 def check_token(token: str) -> bool:
     return bool(re.fullmatch(r"[A-Za-z]+([-'][A-Za-z]+)*", token))
 
-def tokenization_mapping(model_tok : list, doc) -> list:
+def tokenization_mapping(model_tok : list, doc) -> np.ndarray:
     # getting the indices of all named entities
     ne_list = []
     for ent in doc.ents:
@@ -37,7 +39,7 @@ def tokenization_mapping(model_tok : list, doc) -> list:
         while j in ne_list or not check_token(doc[j].text):
             j += 1
             if j >= len(doc):
-                return mapping
+                return np.array(mapping)
 
         # if t is next part of doc[j].text
         if doc[j].text.startswith(t, len(token), len(token)+len(t)):
@@ -48,7 +50,7 @@ def tokenization_mapping(model_tok : list, doc) -> list:
             else:
                 token += t
         else:
-            # if not set token againg to the empty string
+            # if not set token again to the empty string
             token = ''
 
         # if all parts of doc[j].text were found
@@ -59,7 +61,7 @@ def tokenization_mapping(model_tok : list, doc) -> list:
                 break
             token = ''
 
-    return mapping
+    return np.array(mapping)
 
 def mask_tokens_mapping(inputs: torch.Tensor, mapping: list, tokenizer, mask_prob: float) -> (torch.Tensor, np.ndarray):
     N = int(len(mapping)*mask_prob)
@@ -76,7 +78,7 @@ def mask_tokens_mapping(inputs: torch.Tensor, mapping: list, tokenizer, mask_pro
     return inputs, mask_map
 
 
-def spin_text(paragraph: str, tokenizer, model, mask_prob: float, k: int=5) -> (str, pd.DataFrame):
+def spin_text_simple(paragraph: str, tokenizer, model, mask_prob: float, k: int=5) -> (str, pd.DataFrame):
     nlp = spacy.load("en_core_web_sm", disable=["parser"])
     # input gets cut off when longer as max_length 
     inputs = tokenizer(
@@ -146,7 +148,7 @@ def spin_text(paragraph: str, tokenizer, model, mask_prob: float, k: int=5) -> (
     return text, df
 
 
-def spin_text_new(text: str, tokenizer, model, mask_prob: float, max_prob: float=0.1, k: int=5, use_sub_tokens: bool=False):# -> (str, pd.DataFrame):
+def spin_text(text: str, tokenizer, model, mask_prob: float, max_prob: float=0.1, k: int=5, use_sub_tokens: bool=False, seed: Optional[int]=None) -> (str, pd.DataFrame):
     # split the paragraph into sentences which fit into the model
     # set up the sentencizer
     nlp_sentencizer = spacy.load("en_core_web_sm", disable=["parser", "tagger", "ner"])
@@ -172,9 +174,13 @@ def spin_text_new(text: str, tokenizer, model, mask_prob: float, max_prob: float
             work_text = work_text[work_sents[-1].start_char:]
     # spin each paragraph
     nlp = spacy.load("en_core_web_sm", disable=["parser"])
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed)
     # list for the spun paragraphs
     spun_paragraphs = []
+    # DataFrame is set later
+    df = None
+    # shift of the index for texts split intu multiple paragraphs
+    df_index_shift = 0
     if use_sub_tokens:
         for paragraph in paragraphs:
             token_ids = tokenizer(
@@ -189,7 +195,6 @@ def spin_text_new(text: str, tokenizer, model, mask_prob: float, max_prob: float
             doc = nlp(paragraph)
             # mapping betwen the two tokenizations
             mapping = tokenization_mapping(model_tok, doc)
-            mapping = np.array(mapping)# TODO create mapping as an numpy array instat of an list
             # "100% of words"
             len_tokens = len([1 for t in doc if check_token(t.text)])# TODO check if there is a better (more clear) option for 100% of tokens (e.g. len(doc))
             # how many tokens to mask
@@ -197,10 +202,10 @@ def spin_text_new(text: str, tokenizer, model, mask_prob: float, max_prob: float
             # maximum number of tokens that can be masked at once
             max_tokens = int(len_tokens * max_prob)
             # chose the tokens that should be replaced (so that at most max_tokens get replaced at once)
-            mask_map_idc = rng.choice(np.arange(len(mapping)), size=(max(N//max_tokens,1), min(max_tokens,N)), replace=False)
-            mask_maps = mapping[mask_map_idc]
+            mask_maps_idc = rng.choice(np.arange(len(mapping)), size=(max(N//max_tokens,1), min(max_tokens,N)), replace=False)
+            mask_maps = mapping[mask_maps_idc]
             if N > max_tokens and N % max_tokens != 0:
-                rest_map_idc = np.setdiff1d(np.arange(len(mapping)), mask_map_idc)
+                rest_map_idc = np.setdiff1d(np.arange(len(mapping)), mask_maps_idc)
                 if N < len(mapping):
                     rest_map_idc = rng.choice(rest_map_idc, size=N%max_tokens, replace=False)
                 rest_map = mapping[rest_map_idc]
@@ -251,9 +256,94 @@ def spin_text_new(text: str, tokenizer, model, mask_prob: float, max_prob: float
                     shift += b - a - 1
                 # setting the restulting tokens and their score values
                 results_indices = topk.indices.gather(1, results)
-                results_scores = topk.values.gather(1, results)# TODO store the scores of the chosen tokens
                 # store the resluting token ids
                 memorize_results[masked_token_indices] = results_indices.flatten()
+
+                # create the DataFrame
+                # the indices to the mask_map for all replaced full word repeated k * number of sub tokens times
+                mask_map_df_idc = np.zeros(0, dtype=int)
+                # top-k numbering
+                postitions = np.zeros(0, dtype=object)
+                for j,m in enumerate(mask_map):
+                    mask_map_df_idc = np.append(mask_map_df_idc, np.tile([j], (m[2]-m[1])*k))
+                    if m[2]-m[1] > 1:
+                        # for words split into sub tokens
+                        for i in range(1, m[2]-m[1]+1):
+                            postitions = np.append(postitions, [f'{i}.{r}' for r in range(1, k+1)])
+                    else:
+                        postitions = np.append(postitions, [f'{r}' for r in range(1, k+1)])
+                # add the mask indices
+                df_np_array = np.array([mask_map[j,0]+df_index_shift for j in mask_map_df_idc]).reshape(1, -1)
+                # add the original tokens
+                df_np_array = np.append(df_np_array, [[doc[mask_map[j,0]].text for j in mask_map_df_idc]], axis=0)
+                # add the original POS tags
+                df_np_array = np.append(df_np_array, [[doc[mask_map[j,0]].pos_ for j in mask_map_df_idc]], axis=0)
+                # add the position numbers of the suggested tokens
+                df_np_array = np.append(df_np_array, postitions.reshape(1, -1), axis=0)
+                # df_np_array = np.append(df_np_array, np.tile(np.arange(1, k+1), len(mask_map_df_idc)//k).reshape(1, -1), axis=0)
+                # add the suggested tokens
+                topk_str = np.array([tokenizer.decode(t) for t in topk.indices.flatten()])
+                df_np_array = np.append(df_np_array, topk_str.reshape(1, -1), axis=0)
+                # add the POS tags of the suggested tokens
+                new_pos = np.zeros(len(topk_str), dtype=object)
+                for l in range(k):
+                    # for all k positions
+                    # insert all top l tokens into the pargraph
+                    # and store the positions where the were interted
+                    topk_paragraph = paragraph
+                    topk_mask_positions = []
+                    shift = 0
+                    for i, m in enumerate(mask_map):
+                        idx, a, b = m
+                        t = doc[idx]
+                        len_new_ts = 0
+                        for j in range(b-a):
+                            # the j-th sub token at position l coresponding to the i-th mask word
+                            new_t = topk_str[i*k+l+j]
+                            if j == 0 and idx > 0 and doc[idx-1].text_with_ws[-1] == ' ':
+                                new_t = new_t.replace(' ', '')
+                            start = t.idx+shift+len_new_ts
+                            end = start+len(new_t)
+                            len_new_ts += len(new_t)
+                            topk_mask_positions.append((start, end))
+                            topk_paragraph = topk_paragraph[:start] + new_t + topk_paragraph[start+len(t):]
+                        shift += len_new_ts - len(t)
+                    # tokenize the paragraph and determen POS tags
+                    topk_doc = nlp(topk_paragraph)
+                    # find the new tokens in the tokenization and store there POS tags
+                    i = 0
+                    topk_idx = 0
+                    for start, end in topk_mask_positions:
+                        for t in topk_doc[topk_idx:]:
+                            if t.i < len(topk_doc)-1 and t.idx < end and topk_doc[t.i+1].idx >= end:
+                                topk_idx = t.i
+                                break
+                            elif t.i == len(topk_doc)-1 and topk_doc[t.i-1].idx < start:
+                                topk_idx = t.i
+                                break
+                            elif t.i == len(topk_doc)-1:
+                                print('Achtung!!!')
+                        new_pos[i*k+l] = topk_doc[topk_idx].pos_# POS for i-th token at the l-th position
+                        i += 1
+                df_np_array = np.append(df_np_array, new_pos.reshape(1, -1), axis=0)
+                # add the scores
+                df_np_array = np.append(df_np_array, topk.values.flatten().detach().numpy().reshape(1, -1), axis=0)
+                # add maker for the chosen tokens
+                mark_chosen = np.zeros(0)
+                for pos in results.flatten():
+                    tmp_mark = k*['']
+                    tmp_mark[pos] = 'x'
+                    mark_chosen = np.append(mark_chosen, tmp_mark)
+                df_np_array = np.append(df_np_array, mark_chosen.reshape(1, -1), axis=0)
+                # insert the data into the DataFrame
+                df_MultiIndex = pd.MultiIndex.from_arrays(df_np_array[:4], names=['index', 'og_token', 'og_POS', 'top-k'])
+                if type(df) is pd.DataFrame:
+                    df = df.append(pd.DataFrame(df_np_array[4:].transpose() ,index=df_MultiIndex, columns=['token', 'POS', 'score', '']))
+                else:
+                    df = pd.DataFrame(df_np_array[4:].transpose() ,index=df_MultiIndex, columns=['token', 'POS', 'score', ''])
+
+            # shift the indices for the DataFrame ot the next paragraph
+            df_index_shift += len(doc)
             # inset the chosen tokens in the model tokenization
             new_token_indices = (memorize_results != -100)
             token_ids['input_ids'][new_token_indices] = memorize_results[new_token_indices]
@@ -277,7 +367,6 @@ def spin_text_new(text: str, tokenizer, model, mask_prob: float, max_prob: float
             # maximum number of tokens that can be masked at once
             max_tokens = int(len_tokens * max_prob)
             # chose the tokens that should be replaced (so that at most max_tokens get replaced at once)
-            rng = np.random.default_rng()
             mask_idc = rng.choice(indices, size=(max(N//max_tokens, 1),min(max_tokens, N)), replace=False)
             if N > max_tokens and N % max_tokens != 0:
                 rest_idc = np.setdiff1d(indices, mask_idc)
@@ -323,7 +412,6 @@ def spin_text_new(text: str, tokenizer, model, mask_prob: float, max_prob: float
                             break
                 # setting the restulting tokens and their score values
                 results_indices = topk.indices.gather(1, results)
-                results_scores = topk.values.gather(1, results)# TODO store the scores of the chosen tokens
                 # store the resluting token strings
                 if N < max_tokens or len(mask_list) == max_tokens:
                     memorize_results.append([tokenizer.decode(t) for t in results_indices.flatten()])
@@ -331,7 +419,73 @@ def spin_text_new(text: str, tokenizer, model, mask_prob: float, max_prob: float
                     # when mask_list contains place holder tokens
                     # insert place holder at the same postitions in memorize_results
                     memorize_results.append((max_tokens-len(mask_list))*[''])
-                    memorize_results[-1].extend([tokenizer.decode(t) for t in results_indices.flatten()])     
+                    memorize_results[-1].extend([tokenizer.decode(t) for t in results_indices.flatten()])
+
+                # create the DataFrame
+                # add the mask indices
+                df_np_array = np.tile(mask_list+df_index_shift, (k, 1)).transpose().reshape(1, -1)
+                # add the original tokens
+                df_np_array = np.append(df_np_array, np.tile([doc[i].text for i in mask_list], (k, 1)).transpose().reshape(1, -1), axis=0)
+                # add the original POS tags
+                df_np_array = np.append(df_np_array, np.tile([doc[i].pos_ for i in mask_list], (k, 1)).transpose().reshape(1, -1), axis=0)
+                # add the position numbers of the suggested tokens
+                df_np_array = np.append(df_np_array, np.tile(np.arange(1, k+1), len(mask_list)).reshape(1, -1), axis=0)
+                # add the suggested tokens
+                topk_str = np.array([tokenizer.decode(t) for t in topk.indices.flatten()])
+                df_np_array = np.append(df_np_array, topk_str.reshape(1, -1), axis=0)
+                # add the POS tags of the suggested tokens
+                new_pos = np.zeros(len(topk_str), dtype=object)
+                for l in range(k):
+                    # for all k positions
+                    # insert all top l tokens into the pargraph
+                    # and store the positions where the were interted
+                    topk_paragraph = paragraph
+                    topk_mask_positions = []
+                    shift = 0
+                    for i, idx in enumerate(mask_list):
+                        t = doc[idx]
+                        new_t = topk_str[i*k+l]# the i-th token at position l
+                        if idx > 0 and doc[idx-1].text_with_ws[-1] == ' ':
+                            new_t = new_t.replace(' ', '')
+                        start = t.idx+shift
+                        end = start+len(new_t)
+                        topk_mask_positions.append((start, end))
+                        topk_paragraph = topk_paragraph[:start] + new_t + topk_paragraph[start+len(t):]
+                        shift += len(new_t) - len(t)
+                    # tokenize the paragraph and determen POS tags
+                    topk_doc = nlp(topk_paragraph)
+                    # find the new tokens in the tokenization and store there POS tags
+                    i = 0
+                    topk_idx = 0
+                    for start, end in topk_mask_positions:
+                        for t in topk_doc[topk_idx:]:
+                            if t.i < len(topk_doc)-1 and t.idx < end and topk_doc[t.i+1].idx >= end:
+                                topk_idx = t.i
+                                break
+                            elif t.i == len(topk_doc)-1 and topk_doc[t.i-1].idx < start:
+                                topk_idx = t.i
+                                break
+                        new_pos[i*k+l] = topk_doc[topk_idx].pos_# POS for i-th token at the l-th position
+                        i += 1
+                df_np_array = np.append(df_np_array, new_pos.reshape(1, -1), axis=0)
+                # add the scores
+                df_np_array = np.append(df_np_array, topk.values.flatten().detach().numpy().reshape(1, -1), axis=0)
+                # add maker for the chosen tokens
+                mark_chosen = np.zeros(0)
+                for pos in results.flatten():
+                    tmp_mark = k*['']
+                    tmp_mark[pos] = 'x'
+                    mark_chosen = np.append(mark_chosen, tmp_mark)
+                df_np_array = np.append(df_np_array, mark_chosen.reshape(1, -1), axis=0)
+                # insert the data into the DataFrame
+                df_MultiIndex = pd.MultiIndex.from_arrays(df_np_array[:4], names=['index', 'og_token', 'og_POS', 'top-k'])
+                if type(df) is pd.DataFrame:
+                    df = df.append(pd.DataFrame(df_np_array[4:].transpose() ,index=df_MultiIndex, columns=['token', 'POS', 'score', '']))
+                else:
+                    df = pd.DataFrame(df_np_array[4:].transpose() ,index=df_MultiIndex, columns=['token', 'POS', 'score', ''])
+
+            # shift the indices for the DataFrame ot the next paragraph
+            df_index_shift += len(doc)
             # comput the 2d indices to sort mask_idc
             argsort_mask_idc_2d = np.dstack(np.unravel_index(np.argsort(mask_idc.ravel()), mask_idc.shape))[0]
             # inset the chosen token stings into the paragraph
@@ -358,7 +512,8 @@ def spin_text_new(text: str, tokenizer, model, mask_prob: float, max_prob: float
     # join the spun paragraphs together
     spun_text = ''.join(spun_paragraphs)
 
-    return spun_text
+    return spun_text, df
+
 
 
 if __name__ == '__main__':
@@ -367,6 +522,7 @@ if __name__ == '__main__':
     max_seq_len = 512
     mask_prob = 0.5
     k = 5
+    seed = datetime.now().microsecond
     tokenizer, lm = init_model(model_name, max_seq_len)
 
     path = os.path.join(get_local_path(), *['data', 'wikipedia', 'ogUTF-8', '232530-ORIG-13.txt'])#232530-ORIG-13.txt, 1208667-ORIG-4.txt
@@ -374,10 +530,32 @@ if __name__ == '__main__':
         toy_sentence = file.read()
     print(toy_sentence)
 
-    # spun_text, df = spin_text(toy_sentence, tokenizer, lm, mask_prob, k)
+    # spun_text, df = spin_text_simple(toy_sentence, tokenizer, lm, mask_prob, k)
     # print(spun_text)
     # print(df)
 
-    spun_text = spin_text_new(toy_sentence, tokenizer, lm, mask_prob, k=k, use_sub_tokens=False)
+    spun_text, df1 = spin_text(toy_sentence, tokenizer, lm, mask_prob, k=k, use_sub_tokens=True, seed=seed)
 
     print(spun_text)
+
+    print(df1)
+
+    spun_text, df2 = spin_text(toy_sentence, tokenizer, lm, mask_prob, k=k, use_sub_tokens=False, seed=seed)
+
+    print(spun_text)
+
+    print(df2)
+
+    with open(os.path.join(get_local_path(), *['data', 'test.txt']), 'w', encoding='utf-8', newline='\n') as file:
+        file.write(df1.sort_values(
+            ['index', 'top-k'],
+            key=lambda series : series.astype(int) if series.name == 'index' else series
+        ).to_string())
+
+        file.write('\n\n--------------------------\n\n')
+
+        file.write(df2.sort_values(
+            ['index', 'top-k'],
+            key=lambda series : series.astype(int) if series.name == 'index' else series
+        ).to_string())
+
