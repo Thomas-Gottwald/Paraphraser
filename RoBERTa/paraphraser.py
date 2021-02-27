@@ -11,6 +11,7 @@ from getPath import get_local_path
 import os
 from datetime import datetime
 from typing import Optional
+from tqdm import tqdm
 
 def init_model(model_name_or_path: str, max_len: int):
     config = AutoConfig.from_pretrained(model_name_or_path)
@@ -292,22 +293,29 @@ def spin_text(text: str, tokenizer, model, mask_prob: float, max_prob: float=0.1
                     # and store the positions where the were interted
                     topk_paragraph = paragraph
                     topk_mask_positions = []
+                    # shift value accounting for the new token length
                     shift = 0
+                    # shift value accounting for the words with multiple sub tokens
+                    i_shift = 0
                     for i, m in enumerate(mask_map):
                         idx, a, b = m
                         t = doc[idx]
-                        len_new_ts = 0
+                        new_t = ''
+                        len_new_t = 0
+                        start = t.idx+shift
                         for j in range(b-a):
                             # the j-th sub token at position l coresponding to the i-th mask word
-                            new_t = topk_str[i*k+l+j]
+                            new_sub_t = topk_str[(i+i_shift+j)*k+l]
                             if j == 0 and idx > 0 and doc[idx-1].text_with_ws[-1] == ' ':
-                                new_t = new_t.replace(' ', '')
-                            start = t.idx+shift+len_new_ts
-                            end = start+len(new_t)
-                            len_new_ts += len(new_t)
-                            topk_mask_positions.append((start, end))
-                            topk_paragraph = topk_paragraph[:start] + new_t + topk_paragraph[start+len(t):]
-                        shift += len_new_ts - len(t)
+                                new_sub_t = new_sub_t.replace(' ', '')
+                            start_sub = start+len_new_t
+                            end_sub = start_sub+len(new_sub_t)
+                            len_new_t += len(new_sub_t)
+                            topk_mask_positions.append((start_sub, end_sub))
+                            new_t += new_sub_t
+                        topk_paragraph = topk_paragraph[:start] + new_t + topk_paragraph[start+len(t):]
+                        shift += len_new_t - len(t)
+                        i_shift += b-a-1
                     # tokenize the paragraph and determen POS tags
                     topk_doc = nlp(topk_paragraph)
                     # find the new tokens in the tokenization and store there POS tags
@@ -321,8 +329,6 @@ def spin_text(text: str, tokenizer, model, mask_prob: float, max_prob: float=0.1
                             elif t.i == len(topk_doc)-1 and topk_doc[t.i-1].idx < start:
                                 topk_idx = t.i
                                 break
-                            elif t.i == len(topk_doc)-1:
-                                print('Achtung!!!')
                         new_pos[i*k+l] = topk_doc[topk_idx].pos_# POS for i-th token at the l-th position
                         i += 1
                 df_np_array = np.append(df_np_array, new_pos.reshape(1, -1), axis=0)
@@ -514,9 +520,112 @@ def spin_text(text: str, tokenizer, model, mask_prob: float, max_prob: float=0.1
 
     return spun_text, df
 
+def create_sample(sample_size: int, data: list, spin_text_args: list, disguise_sample: bool=False):
+    # set up the language model
+    model_name = 'roberta-large'
+    max_seq_len = 512
+    tokenizer, lm = init_model(model_name, max_seq_len)
+    # the name of the folder to stor this sample
+    sampleFolder = datetime.now().strftime("%Y-%m-%d %H_%M_%S")
+    # set the paths to the data
+    path = get_local_path()
+    data_paths = []
+    for d in data:
+        data_paths.append(os.path.join(path, *['data', d]))
+    # get the original text file names
+    ogfiles = []
+    for dp in data_paths:
+        ogfiles.append([f for f in os.listdir(os.path.join(dp, 'ogUTF-8')) if os.path.isfile(os.path.join(dp, *['ogUTF-8', f]))])
+    # chose the sample files
+    sample_files = set()
+    for i in range(sample_size):
+        chose_data = random.randint(0, 10 * len(data)-1) // 10
+        chose_file = random.sample(ogfiles[chose_data], k=1)[0]
+        sample_files.add((data[chose_data], chose_file))
+    # creating the folder for the sample if not exits
+    if not os.path.exists(os.path.join(path, *['data', 'sample', sampleFolder])):
+        os.makedirs(os.path.join(path, *['data', 'sample', sampleFolder]))
 
+    if disguise_sample:
+        # stores the information in witch order the text occur in the sample files (for disguise_sample=True)
+        logInfo = []
+    # write the samples
+    for d, sf in tqdm(sample_files):
+        # open the sample file
+        sfile_name = sf.replace('ORIG', d.upper())
+        sfile = open(os.path.join(path, *['data', 'sample', sampleFolder, sfile_name]), 'w', encoding='utf-8', newline='\n')
+        # create DataFrame file
+        dffile_name = 'df_' + sfile_name
+        dffile = open(os.path.join(path, *['data', 'sample', sampleFolder, dffile_name]), 'w', encoding='utf-8', newline='\n')
+        # the order in which the different spun_texts and the original text (index -1) are handeld
+        order = [i for i in range(-1, len(spin_text_args))]
+
+        if disguise_sample:
+            # information in witch order the text occur this sample file
+            sfileInfo = [sfile_name]
+            # shuffle the oder (with -1 for the original text)
+            random.shuffle(order)
+
+        for o in order:
+            if disguise_sample:
+                sfileInfo.append(o)# remember the order
+            else:
+                if o == -1:
+                    arg_info_text = "Original Text"
+                else:
+                    arg_info_text = ", ".join(['{}={}'.format(arg, spin_text_args[o][arg]) for arg in spin_text_args[o]])
+                sfile.write(arg_info_text + ": \n\n")
+
+            og_path = os.path.join(data_paths[data.index(d)], *['ogUTF-8', sf])
+            with open(og_path, encoding='utf-8') as file:
+                originalText = file.read()
+            if o == -1:
+                sfile.write(originalText)
+            else:
+                spun_text, df = spin_text(originalText, tokenizer, lm, **spin_text_args[o])
+                sfile.write(spun_text)
+                # Write in the DataFrame file
+                arg_info_text = ", ".join(['{}={}'.format(arg, spin_text_args[o][arg]) for arg in spin_text_args[o]])
+                dffile.write(arg_info_text + ": \n\n")
+                dffile.write(df.sort_values(
+                    ['index', 'top-k'],
+                    key=lambda series : series.astype(int) if series.name == 'index' else series
+                ).to_string())
+                dffile.write('\n\n' + 100*'-' + '\n\n')
+
+            sfile.write('\n\n' + 100*'-' + '\n\n')
+
+        if disguise_sample:
+            logInfo.append(sfileInfo)
+
+        # close the sample file and DataFrame file
+        sfile.close()
+        dffile.close()
+
+    if disguise_sample:
+        # create the Info file where the information for the sample is stored
+        with open(os.path.join(path, *['data', 'sample', sampleFolder, 'Info.txt']), 'w', encoding='utf-8', newline='\n') as file:
+            for info in logInfo:
+                file.write(info[0] + '\n')
+                for i in range(1, len(info)):
+                    if info[i] == -1:
+                        file.write("    original Text\n")
+                    else:
+                        file.write("    " + ", ".join(['{}={}'.format(arg, spin_text_args[info[i]][arg]) for arg in spin_text_args[info[i]]]) + "\n")
+                file.write('\n')
+       
 
 if __name__ == '__main__':
+
+    seed = datetime.now().microsecond
+    create_sample(
+        3,
+        ['wikipedia'],
+        [{'mask_prob': 0.5, 'max_prob': 0.1, 'k': 5, 'use_sub_tokens': False, 'seed': seed},
+         {'mask_prob': 0.5, 'max_prob': 0.1, 'k': 5, 'use_sub_tokens': True, 'seed': seed}],
+        disguise_sample=False
+    )
+    quit()
 
     model_name = 'roberta-large'
     max_seq_len = 512
@@ -525,9 +634,12 @@ if __name__ == '__main__':
     seed = datetime.now().microsecond
     tokenizer, lm = init_model(model_name, max_seq_len)
 
-    path = os.path.join(get_local_path(), *['data', 'wikipedia', 'ogUTF-8', '232530-ORIG-13.txt'])#232530-ORIG-13.txt, 1208667-ORIG-4.txt
+    #232530-ORIG-13.txt
+    #1208667-ORIG-4.txt
+    path = os.path.join(get_local_path(), *['data', 'wikipedia', 'ogUTF-8', '1207-ORIG-43.txt'])
     with open(path, 'r', encoding='utf-8') as file:
         toy_sentence = file.read()
+    print('\n')
     print(toy_sentence)
 
     # spun_text, df = spin_text_simple(toy_sentence, tokenizer, lm, mask_prob, k)
@@ -538,24 +650,24 @@ if __name__ == '__main__':
 
     print(spun_text)
 
-    print(df1)
+    # print(df1.to_string())
 
-    spun_text, df2 = spin_text(toy_sentence, tokenizer, lm, mask_prob, k=k, use_sub_tokens=False, seed=seed)
+    # spun_text, df2 = spin_text(toy_sentence, tokenizer, lm, mask_prob, k=k, use_sub_tokens=False, seed=seed)
 
-    print(spun_text)
+    # print(spun_text)
 
-    print(df2)
+    # print(df2)
 
-    with open(os.path.join(get_local_path(), *['data', 'test.txt']), 'w', encoding='utf-8', newline='\n') as file:
-        file.write(df1.sort_values(
-            ['index', 'top-k'],
-            key=lambda series : series.astype(int) if series.name == 'index' else series
-        ).to_string())
+    # with open(os.path.join(get_local_path(), *['data', 'test.txt']), 'w', encoding='utf-8', newline='\n') as file:
+    #     file.write(df1.sort_values(
+    #         ['index', 'top-k'],
+    #         key=lambda series : series.astype(int) if series.name == 'index' else series
+    #     ).to_string())
 
-        file.write('\n\n--------------------------\n\n')
+    #     file.write('\n\n--------------------------\n\n')
 
-        file.write(df2.sort_values(
-            ['index', 'top-k'],
-            key=lambda series : series.astype(int) if series.name == 'index' else series
-        ).to_string())
+    #     file.write(df2.sort_values(
+    #         ['index', 'top-k'],
+    #         key=lambda series : series.astype(int) if series.name == 'index' else series
+    #     ).to_string())
 
