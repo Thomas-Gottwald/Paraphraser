@@ -164,7 +164,7 @@ def spin_text(text: str, tokenizer, model, mask_prob: float, max_prob: float=0.1
         )
         text_decoded = tokenizer.decode(tokens['input_ids'])[3:-4]# slicing excludes the start and end tokens (adjust for other models)
         # when the work text is to long for the model the decoded text is shorter
-        if text_decoded == work_text:
+        if text_decoded == work_text or len(tokens['input_ids']) < tokenizer.model_max_length:
             paragraphs.append(work_text)
             work_text = ''
         else:
@@ -636,11 +636,12 @@ if __name__ == '__main__':
 
     #232530-ORIG-13.txt
     #1208667-ORIG-4.txt
-    path = os.path.join(get_local_path(), *['data', 'wikipedia', 'ogUTF-8', '1207-ORIG-43.txt'])
+    path = os.path.join(get_local_path(), *['data', 'wikipedia', 'ogUTF-8', '232530-ORIG-13.txt'])
     with open(path, 'r', encoding='utf-8') as file:
         toy_sentence = file.read()
-    print('\n')
+    print('')
     print(toy_sentence)
+    print('')
 
     # spun_text, df = spin_text_simple(toy_sentence, tokenizer, lm, mask_prob, k)
     # print(spun_text)
