@@ -2,3 +2,5 @@ RoBERTa/__pycache__/paraphrase_pipeline.cpython-37.pyc
 POS tagging/*
 /data/*
 */__pycache__/*
+.ipynb_checkpoints/*
+.vscode/*
