@@ -12,10 +12,10 @@ from datetime import datetime
 from typing import Optional
 from tqdm import tqdm
 
-def init_model(model_name_or_path: str, max_len: int):
+def init_model(model_name_or_path: str, max_len: int, enable_cuda: bool=True):
     config = AutoConfig.from_pretrained(model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, model_max_length=max_len)
-    torch_device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    torch_device = 'cuda' if enable_cuda and torch.cuda.is_available() else 'cpu'
     masked_model = AutoModelForMaskedLM.from_pretrained(model_name_or_path, config=config).to(torch_device)
 
     return tokenizer, masked_model
@@ -205,9 +205,9 @@ def spin_text(text: str, tokenizer, model, mask_prob: float, max_prob: float=0.1
             # insert the data into the DataFrame
             df_MultiIndex = pd.MultiIndex.from_arrays(df_np_array[:4], names=['index', 'og_token', 'og_POS', 'top-k'])
             if type(df) is pd.DataFrame:
-                df = df.append(pd.DataFrame(df_np_array[4:].transpose() ,index=df_MultiIndex, columns=['token', 'POS', 'score', '']))
+                df = df.append(pd.DataFrame(df_np_array[4:].transpose() ,index=df_MultiIndex, columns=['token', 'POS', 'score', 'chosen']))
             else:
-                df = pd.DataFrame(df_np_array[4:].transpose() ,index=df_MultiIndex, columns=['token', 'POS', 'score', ''])
+                df = pd.DataFrame(df_np_array[4:].transpose() ,index=df_MultiIndex, columns=['token', 'POS', 'score', 'chosen'])
 
         # shift the indices for the DataFrame ot the next paragraph
         df_index_shift += len(doc)
@@ -332,7 +332,7 @@ def create_sample(sample_size: int, data: list, spin_text_args: list, disguise_s
                     else:
                         file.write("    " + ", ".join(['{}={}'.format(arg, spin_text_args[info[i]][arg]) for arg in spin_text_args[info[i]]]) + "\n")
                 file.write('\n')
-       
+
 
 if __name__ == '__main__':
 
@@ -349,12 +349,13 @@ if __name__ == '__main__':
     max_seq_len = 512
     mask_prob = 0.5
     k = 5
-    seed = 623594#datetime.now().microsecond
+    seed = datetime.now().microsecond
     tokenizer, lm = init_model(model_name, max_seq_len)
 
     #232530-ORIG-13.txt
     #1208667-ORIG-4.txt
-    path = os.path.join(get_local_path(), *['data', 'wikipedia', 'ogUTF-8', '27509373-ORIG-28.txt'])
+    #27509373-ORIG-28.txt
+    path = os.path.join(get_local_path(), *['data', 'wikipedia', 'ogUTF-8', '4115833-ORIG-15.txt'])
     with open(path, 'r', encoding='utf-8') as file:
         toy_sentence = file.read()
     print('')

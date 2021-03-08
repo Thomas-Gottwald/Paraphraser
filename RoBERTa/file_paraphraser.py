@@ -1,10 +1,10 @@
-import paraphrase_pipeline as ppipe
+from paraphraser import init_model, spin_text
 from getPath import get_local_path
-from transformers import pipeline
-from transformers.pipelines import FillMaskPipeline
-from transformers import AutoTokenizer, AutoModelForMaskedLM
+import numpy as np
+import pandas as pd
 import os
 from enum import Enum
+from typing import Optional
 from tqdm import tqdm
 
 class Data(Enum):
@@ -12,86 +12,161 @@ class Data(Enum):
     ARXIV = 2
     WIKIPEDIA = 3
 
-# witch data will be paraphrased
-data = Data.WIKIPEDIA
-# how much (in %) of the text will be replaced
-mask_pc = 30 # 10%, 20%, 30%
+def add_to_df_dataset(df: pd.DataFrame, df_dataset: Optional[pd.DataFrame]) -> (pd.DataFrame):
+    """
+    extracts information out of the DataFrame df consisting of the number of chosen and suggested
+    tokens with certain POS tags and also the sum of the chosen and suggested token scores
+    each grouped by the original POS tags
+    this information is returned if df_dataset is None
+    otherwise it is summed up with df_dataset and then returned
+    """
+    if type(df_dataset) is pd.DataFrame:
+        df_suggested = df.reset_index().astype({'score': 'float64'}).groupby(['og_POS', 'POS']).agg(
+            {'token': 'count', 'score': 'sum'}
+        ).rename(columns={'token': 'suggested', 'score': 'sum_sug_score'})
 
-# the parameters for the Paraphraser
-paraphrase_args = {'mask' : mask_pc/100.0 , 'range_replace' : [(1, 4), (0, 4)]}
+        df_chosen = df.query('chosen == "x"').reset_index().astype({'score': 'float64'}).groupby(['og_POS', 'POS']).agg(
+            {'chosen': 'count', 'score': 'sum'}
+        ).rename(columns={'score': 'sum_cho_score'})
 
-# setting up the paraphraser
-tokenizer = AutoTokenizer.from_pretrained("roberta-large")
-model = AutoModelForMaskedLM.from_pretrained("roberta-large")
-model.resize_token_embeddings(len(tokenizer))
-unmasker = FillMaskPipeline(model=model, tokenizer=tokenizer, device=0)
-# unmasker = pipeline('fill-mask', model='roberta-large')
-paraphraser = ppipe.ParaphrasePipeline(unmasker, input_window_size=512)
-
-# setting the path to the data
-path = get_local_path()
-if data == Data.THESIS:
-    ogpath = os.path.join(path, *['data', 'thesis', 'ogUTF-8'])
-    sppath = os.path.join(path, *['data', 'thesis'])
-elif  data == Data.ARXIV:
-    ogpath = os.path.join(path, *['data', 'arxiv', 'ogUTF-8'])
-    sppath = os.path.join(path, *['data', 'arxiv'])
-elif data == Data.WIKIPEDIA:
-    ogpath = os.path.join(path, *['data', 'wikipedia', 'ogUTF-8'])
-    sppath = os.path.join(path, *['data', 'wikipedia'])
-else:
-    print('data is not specificied!')
-    quit()
-
-# getting the names of the original text files
-ogfiles = [f for f in os.listdir(ogpath) if os.path.isfile(os.path.join(ogpath, f))]
-
-# creating the folder for the spun files if it not exist
-# sp_dir = "sp({}%)".format(mask_pc) TODO
-# generating the folder name for the spun files
-sp_dir = "sp("
-for key in paraphrase_args:
-    if key == 'mask':
-        sp_dir += "{}%, ".format(int(paraphrase_args.get(key) * 100))
-    elif key == 'range_replace':
-        sp_dir += "{}, ".format(paraphrase_args.get(key))
-    elif paraphrase_args.get(key) == True:
-        sp_dir += "{}, ".format(key)
+        df_dataset = df_dataset.add(df_suggested, fill_value=0)
+        df_dataset = df_dataset.add(df_chosen, fill_value=0)
     else:
-        sp_dir += "{}: {}, ".format(key, paraphrase_args.get(key))
-sp_dir = sp_dir[:-2] + ")"
+        df_dataset = df.reset_index().astype({'score': 'float64'}).groupby(['og_POS', 'POS']).agg(
+            {'token': 'count', 'score': 'sum'}
+        ).rename(columns={'token': 'suggested', 'score': 'sum_sug_score'})
 
-sppath = os.path.join(sppath, sp_dir)
-if not os.path.exists(sppath):
-    os.makedirs(sppath)
+        df_chosen = df.query('chosen == "x"').reset_index().astype({'score': 'float64'}).groupby(['og_POS', 'POS']).agg(
+            {'chosen': 'count', 'score': 'sum'}
+        ).rename(columns={'score': 'sum_cho_score'})
 
-phase = 2
-phase_size = 5000
-start = phase_size * (phase - 1)
-stop = min(phase_size * phase, len(ogfiles))
-# N = len(ogfiles) TODO
-# for i in tqdm(range(N)): TODO
-for i in tqdm(range(start, stop)):
-    with open(os.path.join(ogpath, ogfiles[i]), encoding='utf-8') as file:
-        originalText = file.read()
-    # spun_text = paraphraser.parapherase(originalText, mask=mask_pc/100, range_replace=[(1, 4), (0, 4)]) TODO
-    spun_text = paraphraser.parapherase(originalText, **paraphrase_args)
-    spunfile = ogfiles[i].replace('ORIG', 'SPUN')
-    with open(os.path.join(sppath, spunfile), 'w', encoding='utf-8', newline='\n') as file:
-        file.write(spun_text)
+        df_dataset[['chosen', 'sum_cho_score']] = df_chosen[['chosen', 'sum_cho_score']]
 
-# Wikipedia: 10%, [(1,4),(0,4)]
-# phase 1: 10000/10000 [1:41:05<00:00,  1.65it/s]
-# phase 2: 10000/10000 [1:47:49<00:00,  1.55it/s]
-# phase 3: 10000/10000 [1:58:28<00:00,  1.41it/s]
-# phase 4: 9241/9241 [1:37:37<00:00,  1.58it/s]
+    return df_dataset
 
-# Wikipedia: 20%, [(1,4),(0,4)]
-# phase 1: 10000/10000 [3:27:10<00:00,  1.24s/it]
-# phase 2: 10000/10000 [3:52:35<00:00,  1.40s/it]
-# phase 3: 10000/10000 [3:25:21<00:00,  1.23s/it]
-# phase 4: 9241/9241 [3:14:20<00:00,  1.26s/it]
+def paraphrase_dataset(data: Data, N: int, tokenizer, lm, spin_text_args: dict):
+    """
+    Paraphrases the dataset referred with data
 
-# Wikipedia: 30%, [(1,4),(0,4)]
-# phase 1: 5000/5000 [2:38:08<00:00,  1.90s/it]
-# phase 2: 5000/5000 [2:35:40<00:00,  1.87s/it]
+    Args:
+        data: Enum for the Datasets (wikipedia, arxiv, thesis)
+        N: The number of files to paraphrase
+        tokenizer: The tokenizer of the language model
+        lm: The language model used for paraphrasing (the function spin_text)
+        spin_text_args: the arguments for the function spin_text besides
+            the text to spin, the model tokenizer and the language model
+    """
+    # setting the path to the data
+    path = get_local_path()
+    if data == Data.THESIS:
+        og_path = os.path.join(path, *['data', 'thesis', 'ogUTF-8'])
+        sp_path = os.path.join(path, *['data', 'thesis'])
+    elif  data == Data.ARXIV:
+        og_path = os.path.join(path, *['data', 'arxiv', 'ogUTF-8'])
+        sp_path = os.path.join(path, *['data', 'arxiv'])
+    elif data == Data.WIKIPEDIA:
+        og_path = os.path.join(path, *['data', 'wikipedia', 'ogUTF-8'])
+        sp_path = os.path.join(path, *['data', 'wikipedia'])
+    else:
+        print('data is not specificied!')
+        exit()
+
+    # the folder name for the spun files
+    sp_dir = "sp({})".format(spin_text_args['mask_prob'])
+    # create the folder if it dose not exist already
+    sp_path = os.path.join(sp_path, sp_dir)
+    if not os.path.exists(sp_path):
+        os.makedirs(sp_path)
+        os.makedirs(os.path.join(sp_path, 'text'))
+        os.makedirs(os.path.join(sp_path, 'df'))
+    
+    # check if the parameter text files already exists
+    if os.path.isfile(os.path.join(sp_path, 'parmeters.txt')):
+        # if it already exist make sure that the parameters are the same
+        with open(os.path.join(sp_path, 'parmeters.txt'), encoding='utf-8') as file:
+            assert file.read() == ', '.join(['{}={}'.format(
+                arg, spin_text_args[arg]) for arg in spin_text_args]
+            ), f"The parameters from in {os.path.join(sp_path, 'parmeters.txt')} do not line up with the used parametes!"
+    else:
+        # create a file to store the parameters of the creation of the text
+        with open(os.path.join(sp_path, 'parmeters.txt'), 'w', encoding='utf-8', newline='\n') as file:
+            file.write(', '.join(['{}={}'.format(arg, spin_text_args[arg]) for arg in spin_text_args]))
+
+    # getting the first N names of the original text files which were not paraphrased already
+    all_og_files = [f for f in os.listdir(og_path) if os.path.isfile(os.path.join(og_path, f))]
+    sp_path_texts = os.path.join(sp_path, 'text')
+    all_spun_files = [f.replace('SPUN', 'ORIG') for f in os.listdir(sp_path_texts) if os.path.isfile(os.path.join(sp_path_texts, f))]
+    og_files = np.setdiff1d(all_og_files, all_spun_files)
+    if len(og_files) == 0:
+        print('All files were already paraphrased!!!')
+        exit()
+    elif len(og_files) > N:
+        og_files = og_files[:N]
+
+    # check if the dataset DataFrame already exist
+    if os.path.isfile(os.path.join(sp_path, 'dataset.pkl')):
+        # if yes then load it
+        df_dataset = pd.read_pickle(os.path.join(sp_path, 'dataset.pkl'))
+    else:
+        # if not set it to None
+        df_dataset = None
+    for og_file in tqdm(og_files):
+        with open(os.path.join(og_path, og_file), encoding='utf-8') as file:
+            originalText = file.read()
+        spun_text, df = spin_text(originalText, tokenizer, lm, **spin_text_args)
+        df_dataset = add_to_df_dataset(df, df_dataset)
+        spun_file = og_file.replace('ORIG', 'SPUN')
+        with open(os.path.join(sp_path, *['text', spun_file]), 'w', encoding='utf-8', newline='\n') as file:
+            file.write(spun_text)
+        spun_df_file = spun_file.replace('txt', 'pkl')
+        df.to_pickle(os.path.join(sp_path, *['df', spun_df_file]))
+
+    # check if the hole dataset was paraphrased
+    all_og_files = [f for f in os.listdir(og_path) if os.path.isfile(os.path.join(og_path, f))]
+    all_spun_files = [f.replace('SPUN', 'ORIG') for f in os.listdir(sp_path_texts) if os.path.isfile(os.path.join(sp_path_texts, f))]
+    if len(all_og_files) == len(all_spun_files):
+        # then create the avg out of the sums in the dataset DataFrame
+        df_dataset = df_dataset.fillna({'chosen': 0}).astype({'chosen': 'int64'})
+        df_dataset = df_dataset.fillna({'suggested': 0}).astype({'suggested': 'int64'})
+        df_dataset['avg_sug_score'] = df_dataset['sum_sug_score']/df_dataset['suggested']
+        df_dataset['avg_cho_score'] = df_dataset['sum_cho_score']/df_dataset['chosen']
+        df_dataset = df_dataset[['suggested', 'avg_sug_score', 'chosen', 'avg_cho_score']]
+        print('The hole Dataset was paraphrased!')
+
+    # store the dataset DataFrame
+    df_dataset.to_pickle(os.path.join(sp_path, 'dataset.pkl'))
+
+def load_df_dataset(df_path: str):
+    # load_df_dataset(os.path.join(get_local_path(), *['data', 'wikipedia', 'sp(0.5)', 'dataset.pkl']))
+
+    df_dataset = pd.read_pickle(df_path)
+
+    print(df_dataset)
+    # original POS
+    print(df_dataset.reset_index().groupby('og_POS').agg({'chosen': 'sum'}).rename(columns={'chosen': 'count'}))
+    # suggested POS
+    print(df_dataset.reset_index().groupby('POS').agg({'suggested': 'sum'}))
+    # chosen POS
+    print(df_dataset.reset_index().groupby('POS').agg({'chosen': 'sum'}))
+    # avg chosen score
+    if 'avg_cho_score' in df_dataset:
+        print((df_dataset['avg_cho_score']*df_dataset['chosen']).sum()/df_dataset['chosen'].sum())
+
+
+if __name__ == '__main__':
+    # witch data will be paraphrased
+    data = Data.WIKIPEDIA
+    # how many files should be paraphrased
+    N = 5000
+    # load the language model
+    model_name = 'roberta-large'
+    max_seq_len = 512
+    tokenizer, lm = init_model(model_name, max_seq_len)
+    # the parameters for the paraphraser
+    mask_prob = 0.5
+    max_prob = 0.1
+    k = 5
+    spin_text_args = {'mask_prob': mask_prob, 'max_prob': mask_prob, 'k': k}
+
+    # spin the dataset
+    paraphrase_dataset(data, N, tokenizer, lm, spin_text_args)
