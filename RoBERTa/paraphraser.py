@@ -122,7 +122,7 @@ def spin_text(text: str, tokenizer, model, mask_prob: float, max_prob: float=0.1
                         check_t.append(memorize_results[m_r_I[0]][m_r_J[0]])
                     else:
                         check_t.append(doc[m_idx-1].text)# the previous token in the original text
-                if m_idx < len(doc):
+                if m_idx+1 < len(doc):
                     if m_idx+1 in mask_idc[:j]:
                         # the resulting token strings are stored with the same index as in mask_idc
                         # therefor at this position is the next token in the final text stored
