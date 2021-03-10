@@ -69,7 +69,7 @@ def spin_text(text: str, tokenizer, model, mask_prob: float, max_prob: float=0.1
         # how many tokens to mask
         N = min(max(int(len_tokens * mask_prob), 0), len(indices))
         # maximum number of tokens that can be masked at once
-        max_tokens = int(len_tokens * max_prob)
+        max_tokens = max(int(len_tokens * max_prob), 1)
         # chose the tokens that should be replaced (so that at most max_tokens get replaced at once)
         mask_idc = rng.choice(indices, size=(max(N//max_tokens, 1),min(max_tokens, N)), replace=False)
         if N > max_tokens and N % max_tokens != 0:
@@ -77,6 +77,9 @@ def spin_text(text: str, tokenizer, model, mask_prob: float, max_prob: float=0.1
             if N < len(indices):
                 rest_idc = rng.choice(rest_idc, size=N%max_tokens, replace=False)
             mask_idc = np.append(mask_idc, np.append(rest_idc, (max_tokens-N%max_tokens)*[-1]).reshape(1,-1), axis=0)
+        # if no token was chosen to be masked (for instace if len(indices)==0)
+        if len(mask_idc[-1]) == 0:
+            return None, None
         mask_idc = np.sort(mask_idc)
         # list for storing the resluting tokens
         memorize_results = []
@@ -352,10 +355,14 @@ if __name__ == '__main__':
     seed = datetime.now().microsecond
     tokenizer, lm = init_model(model_name, max_seq_len)
 
+    # wikipedia
     #232530-ORIG-13.txt
     #1208667-ORIG-4.txt
     #27509373-ORIG-28.txt
-    path = os.path.join(get_local_path(), *['data', 'wikipedia', 'ogUTF-8', '4115833-ORIG-15.txt'])
+    # path = os.path.join(get_local_path(), *['data', 'wikipedia', 'ogUTF-8', '4115833-ORIG-15.txt'])
+    # ARXIV
+    # 1612.03590-ORIG-6.txt
+    path = os.path.join(get_local_path(), *['data', 'arxiv', 'ogUTF-8', '1612.03590-ORIG-6.txt'])
     with open(path, 'r', encoding='utf-8') as file:
         toy_sentence = file.read()
     print('')

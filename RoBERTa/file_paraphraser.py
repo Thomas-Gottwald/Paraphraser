@@ -44,18 +44,21 @@ def add_to_df_dataset(df: pd.DataFrame, df_dataset: Optional[pd.DataFrame]) -> (
 
     return df_dataset
 
-def paraphrase_dataset(data: Data, N: int, tokenizer, lm, spin_text_args: dict):
+def paraphrase_dataset(data: Data, N: int, model_name, max_seq_len, spin_text_args: dict):
     """
     Paraphrases the dataset referred with data
 
     Args:
         data: Enum for the Datasets (wikipedia, arxiv, thesis)
         N: The number of files to paraphrase
-        tokenizer: The tokenizer of the language model
-        lm: The language model used for paraphrasing (the function spin_text)
+        model_name: The name of the used language model
+        max_seq_len: The maximum length for input sequences for the model
         spin_text_args: the arguments for the function spin_text besides
             the text to spin, the model tokenizer and the language model
     """
+    # load the language model and its tokenizer
+    tokenizer, lm = init_model(model_name, max_seq_len)
+
     # setting the path to the data
     path = get_local_path()
     if data == Data.THESIS:
@@ -72,7 +75,7 @@ def paraphrase_dataset(data: Data, N: int, tokenizer, lm, spin_text_args: dict):
         exit()
 
     # the folder name for the spun files
-    sp_dir = "sp({})".format(spin_text_args['mask_prob'])
+    sp_dir = "sp({},{})".format(model_name, spin_text_args['mask_prob'])
     # create the folder if it dose not exist already
     sp_path = os.path.join(sp_path, sp_dir)
     if not os.path.exists(sp_path):
@@ -83,14 +86,16 @@ def paraphrase_dataset(data: Data, N: int, tokenizer, lm, spin_text_args: dict):
     # check if the parameter text files already exists
     if os.path.isfile(os.path.join(sp_path, 'parmeters.txt')):
         # if it already exist make sure that the parameters are the same
+        parameter_text = 'model={}, max_seq_len={}\n'.format(model_name, max_seq_len)
+        parameter_text += ', '.join(['{}={}'.format(arg, spin_text_args[arg]) for arg in spin_text_args])
         with open(os.path.join(sp_path, 'parmeters.txt'), encoding='utf-8') as file:
-            assert file.read() == ', '.join(['{}={}'.format(
-                arg, spin_text_args[arg]) for arg in spin_text_args]
-            ), f"The parameters from in {os.path.join(sp_path, 'parmeters.txt')} do not line up with the used parametes!"
+            assert file.read() == parameter_text, f"The parameters from in {os.path.join(sp_path, 'parmeters.txt')} do not line up with the used parametes!"
     else:
         # create a file to store the parameters of the creation of the text
+        parameter_text = 'model={}, max_seq_len={}\n'.format(model_name, max_seq_len)
+        parameter_text += ', '.join(['{}={}'.format(arg, spin_text_args[arg]) for arg in spin_text_args])
         with open(os.path.join(sp_path, 'parmeters.txt'), 'w', encoding='utf-8', newline='\n') as file:
-            file.write(', '.join(['{}={}'.format(arg, spin_text_args[arg]) for arg in spin_text_args]))
+            file.write(parameter_text)
 
     # getting the first N names of the original text files which were not paraphrased already
     all_og_files = [f for f in os.listdir(og_path) if os.path.isfile(os.path.join(og_path, f))]
@@ -114,12 +119,16 @@ def paraphrase_dataset(data: Data, N: int, tokenizer, lm, spin_text_args: dict):
         with open(os.path.join(og_path, og_file), encoding='utf-8') as file:
             originalText = file.read()
         spun_text, df = spin_text(originalText, tokenizer, lm, **spin_text_args)
-        df_dataset = add_to_df_dataset(df, df_dataset)
-        spun_file = og_file.replace('ORIG', 'SPUN')
-        with open(os.path.join(sp_path, *['text', spun_file]), 'w', encoding='utf-8', newline='\n') as file:
-            file.write(spun_text)
-        spun_df_file = spun_file.replace('txt', 'pkl')
-        df.to_pickle(os.path.join(sp_path, *['df', spun_df_file]))
+        if type(spun_text) is str or type(df) is pd.DataFrame:
+            df_dataset = add_to_df_dataset(df, df_dataset)
+            spun_file = og_file.replace('ORIG', 'SPUN')
+            with open(os.path.join(sp_path, *['text', spun_file]), 'w', encoding='utf-8', newline='\n') as file:
+                file.write(spun_text)
+            spun_df_file = spun_file.replace('txt', 'pkl')
+            df.to_pickle(os.path.join(sp_path, *['df', spun_df_file]))
+        else:
+            with open(os.path.join(sp_path, 'excluded.txt'), 'a', encoding='utf-8', newline='\n') as file:
+                file.write(og_file + "\n")
 
     # check if the hole dataset was paraphrased
     all_og_files = [f for f in os.listdir(og_path) if os.path.isfile(os.path.join(og_path, f))]
@@ -155,18 +164,32 @@ def load_df_dataset(df_path: str):
 
 if __name__ == '__main__':
     # witch data will be paraphrased
-    data = Data.WIKIPEDIA
+    data = Data.ARXIV
     # how many files should be paraphrased
-    N = 5000
+    N = 50000
     # load the language model
     model_name = 'roberta-large'
     max_seq_len = 512
-    tokenizer, lm = init_model(model_name, max_seq_len)
     # the parameters for the paraphraser
     mask_prob = 0.5
     max_prob = 0.1
     k = 5
-    spin_text_args = {'mask_prob': mask_prob, 'max_prob': mask_prob, 'k': k}
+    spin_text_args = {'mask_prob': mask_prob, 'max_prob': max_prob, 'k': k}
 
     # spin the dataset
-    paraphrase_dataset(data, N, tokenizer, lm, spin_text_args)
+    paraphrase_dataset(data, N, model_name, max_seq_len, spin_text_args)
+
+    # wikipedia
+    # with 0.5 max_prob
+    # 1000/1000 [15:54<00:00,  1.05it/s]
+    # 5000/5000 [1:21:46<00:00,  1.02it/s]
+    # 2000/2000 [32:21<00:00,  1.03it/s]
+    # 1000/1000 [16:11<00:00,  1.03it/s]
+    # 5000/5000 [1:19:52<00:00,  1.04it/s]
+    # 5000/5000 [1:20:17<00:00,  1.04it/s]
+    # 10000/10000 [2:43:10<00:00,  1.02it/s]
+    # 10000/10000 [2:44:40<00:00,  1.01it/s]
+    # 241/241 [03:45<00:00,  1.07it/s]
+
+    # arxiv
+    # 
