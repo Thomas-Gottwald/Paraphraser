@@ -101,6 +101,10 @@ def paraphrase_dataset(data: Data, N: int, model_name, max_seq_len, spin_text_ar
     all_og_files = [f for f in os.listdir(og_path) if os.path.isfile(os.path.join(og_path, f))]
     sp_path_texts = os.path.join(sp_path, 'text')
     all_spun_files = [f.replace('SPUN', 'ORIG') for f in os.listdir(sp_path_texts) if os.path.isfile(os.path.join(sp_path_texts, f))]
+    # include excluded files into the processed files
+    if os.path.isfile(os.path.join(sp_path, 'excluded.txt')):
+        with open(os.path.join(sp_path, 'excluded.txt'), encoding='utf-8') as file:
+            all_spun_files.extend(file.read().split('\n')[:-1])
     og_files = np.setdiff1d(all_og_files, all_spun_files)
     if len(og_files) == 0:
         print('All files were already paraphrased!!!')
@@ -133,6 +137,10 @@ def paraphrase_dataset(data: Data, N: int, model_name, max_seq_len, spin_text_ar
     # check if the hole dataset was paraphrased
     all_og_files = [f for f in os.listdir(og_path) if os.path.isfile(os.path.join(og_path, f))]
     all_spun_files = [f.replace('SPUN', 'ORIG') for f in os.listdir(sp_path_texts) if os.path.isfile(os.path.join(sp_path_texts, f))]
+    # include excluded files into the processed files
+    if os.path.isfile(os.path.join(sp_path, 'excluded.txt')):
+        with open(os.path.join(sp_path, 'excluded.txt'), encoding='utf-8') as file:
+            all_spun_files.extend(file.read().split('\n')[:-1])
     if len(all_og_files) == len(all_spun_files):
         # then create the avg out of the sums in the dataset DataFrame
         df_dataset = df_dataset.fillna({'chosen': 0}).astype({'chosen': 'int64'})
@@ -147,6 +155,7 @@ def paraphrase_dataset(data: Data, N: int, model_name, max_seq_len, spin_text_ar
 
 def load_df_dataset(df_path: str):
     # load_df_dataset(os.path.join(get_local_path(), *['data', 'wikipedia', 'sp(0.5)', 'dataset.pkl']))
+    # load_df_dataset(os.path.join(get_local_path(), *['data', 'arxiv', 'sp(roberta-large,0.5)', 'dataset.pkl']))
 
     df_dataset = pd.read_pickle(df_path)
 
@@ -166,7 +175,7 @@ if __name__ == '__main__':
     # witch data will be paraphrased
     data = Data.ARXIV
     # how many files should be paraphrased
-    N = 50000
+    N = 10000
     # load the language model
     model_name = 'roberta-large'
     max_seq_len = 512
@@ -192,4 +201,6 @@ if __name__ == '__main__':
     # 241/241 [03:45<00:00,  1.07it/s]
 
     # arxiv
-    # 
+    # 5000/5000 [1:49:24<00:00,  1.31s/it]
+    # 10000/10000 [3:34:43<00:00,  1.29s/it]
+    # 5967/5967 [2:05:00<00:00,  1.26s/it]
