@@ -1,16 +1,10 @@
-from paraphraser import init_model, spin_text
+from paraphraser import Data, Model, init_model, spin_text
 from getPath import get_local_path
 import numpy as np
 import pandas as pd
 import os
-from enum import Enum
 from typing import Optional
 from tqdm import tqdm
-
-class Data(Enum):
-    THESIS = 1
-    ARXIV = 2
-    WIKIPEDIA = 3
 
 def add_to_df_dataset(df: pd.DataFrame, df_dataset: Optional[pd.DataFrame]) -> (pd.DataFrame):
     """
@@ -44,38 +38,28 @@ def add_to_df_dataset(df: pd.DataFrame, df_dataset: Optional[pd.DataFrame]) -> (
 
     return df_dataset
 
-def paraphrase_dataset(data: Data, N: int, model_name, max_seq_len, spin_text_args: dict):
+def paraphrase_dataset(data: Data, N: int, model_type: Model, max_seq_len: int, spin_text_args: dict):
     """
     Paraphrases the dataset referred with data
 
     Args:
         data: Enum for the Datasets (wikipedia, arxiv, thesis)
         N: The number of files to paraphrase
-        model_name: The name of the used language model
+        model_type: Enum for the mask neural language model
         max_seq_len: The maximum length for input sequences for the model
         spin_text_args: the arguments for the function spin_text besides
             the text to spin, the model tokenizer and the language model
     """
     # load the language model and its tokenizer
-    tokenizer, lm = init_model(model_name, max_seq_len)
+    tokenizer, lm = init_model(model_type, max_seq_len)
 
     # setting the path to the data
     path = get_local_path()
-    if data == Data.THESIS:
-        og_path = os.path.join(path, *['data', 'thesis', 'ogUTF-8'])
-        sp_path = os.path.join(path, *['data', 'thesis'])
-    elif  data == Data.ARXIV:
-        og_path = os.path.join(path, *['data', 'arxiv', 'ogUTF-8'])
-        sp_path = os.path.join(path, *['data', 'arxiv'])
-    elif data == Data.WIKIPEDIA:
-        og_path = os.path.join(path, *['data', 'wikipedia', 'ogUTF-8'])
-        sp_path = os.path.join(path, *['data', 'wikipedia'])
-    else:
-        print('data is not specificied!')
-        exit()
+    og_path = os.path.join(path, *['data', str(data), 'ogUTF-8'])
+    sp_path = os.path.join(path, *['data', str(data)])
 
     # the folder name for the spun files
-    sp_dir = "sp({},{})".format(model_name, spin_text_args['mask_prob'])
+    sp_dir = "sp({},{})".format(str(model_type).replace('/', '_'), spin_text_args['mask_prob'])
     # create the folder if it dose not exist already
     sp_path = os.path.join(sp_path, sp_dir)
     if not os.path.exists(sp_path):
@@ -86,13 +70,13 @@ def paraphrase_dataset(data: Data, N: int, model_name, max_seq_len, spin_text_ar
     # check if the parameter text files already exists
     if os.path.isfile(os.path.join(sp_path, 'parmeters.txt')):
         # if it already exist make sure that the parameters are the same
-        parameter_text = 'model={}, max_seq_len={}\n'.format(model_name, max_seq_len)
+        parameter_text = 'model={}, max_seq_len={}\n'.format(str(model_type), max_seq_len)
         parameter_text += ', '.join(['{}={}'.format(arg, spin_text_args[arg]) for arg in spin_text_args])
         with open(os.path.join(sp_path, 'parmeters.txt'), encoding='utf-8') as file:
             assert file.read() == parameter_text, f"The parameters from in {os.path.join(sp_path, 'parmeters.txt')} do not line up with the used parametes!"
     else:
         # create a file to store the parameters of the creation of the text
-        parameter_text = 'model={}, max_seq_len={}\n'.format(model_name, max_seq_len)
+        parameter_text = 'model={}, max_seq_len={}\n'.format(str(model_type), max_seq_len)
         parameter_text += ', '.join(['{}={}'.format(arg, spin_text_args[arg]) for arg in spin_text_args])
         with open(os.path.join(sp_path, 'parmeters.txt'), 'w', encoding='utf-8', newline='\n') as file:
             file.write(parameter_text)
@@ -122,15 +106,17 @@ def paraphrase_dataset(data: Data, N: int, model_name, max_seq_len, spin_text_ar
     for og_file in tqdm(og_files):
         with open(os.path.join(og_path, og_file), encoding='utf-8') as file:
             originalText = file.read()
-        spun_text, df = spin_text(originalText, tokenizer, lm, **spin_text_args)
-        if type(spun_text) is str or type(df) is pd.DataFrame:
+        try:
+            spun_text, df = spin_text(originalText, tokenizer, lm, **spin_text_args)
+
             df_dataset = add_to_df_dataset(df, df_dataset)
             spun_file = og_file.replace('ORIG', 'SPUN')
             with open(os.path.join(sp_path, *['text', spun_file]), 'w', encoding='utf-8', newline='\n') as file:
                 file.write(spun_text)
             spun_df_file = spun_file.replace('txt', 'pkl')
             df.to_pickle(os.path.join(sp_path, *['df', spun_df_file]))
-        else:
+        except AssertionError:
+            # store files which cause an AssertionError in spin_text in excluded.txt
             with open(os.path.join(sp_path, 'excluded.txt'), 'a', encoding='utf-8', newline='\n') as file:
                 file.write(og_file + "\n")
 
@@ -153,31 +139,14 @@ def paraphrase_dataset(data: Data, N: int, model_name, max_seq_len, spin_text_ar
     # store the dataset DataFrame
     df_dataset.to_pickle(os.path.join(sp_path, 'dataset.pkl'))
 
-def load_df_dataset(df_path: str):
-    # load_df_dataset(os.path.join(get_local_path(), *['data', 'wikipedia', 'sp(0.5)', 'dataset.pkl']))
-    # load_df_dataset(os.path.join(get_local_path(), *['data', 'arxiv', 'sp(roberta-large,0.5)', 'dataset.pkl']))
-
-    df_dataset = pd.read_pickle(df_path)
-
-    print(df_dataset)
-    # original POS
-    print(df_dataset.reset_index().groupby('og_POS').agg({'chosen': 'sum'}).rename(columns={'chosen': 'count'}))
-    # suggested POS
-    print(df_dataset.reset_index().groupby('POS').agg({'suggested': 'sum'}))
-    # chosen POS
-    print(df_dataset.reset_index().groupby('POS').agg({'chosen': 'sum'}))
-    # avg chosen score
-    if 'avg_cho_score' in df_dataset:
-        print((df_dataset['avg_cho_score']*df_dataset['chosen']).sum()/df_dataset['chosen'].sum())
-
 
 if __name__ == '__main__':
     # witch data will be paraphrased
-    data = Data.ARXIV
+    data = Data.WIKIPEDIA
     # how many files should be paraphrased
-    N = 10000
-    # load the language model
-    model_name = 'roberta-large'
+    N = 5 #10000
+    # the masked language model
+    model_type = Model.BART #Model.ROBERTA
     max_seq_len = 512
     # the parameters for the paraphraser
     mask_prob = 0.5
@@ -186,21 +155,4 @@ if __name__ == '__main__':
     spin_text_args = {'mask_prob': mask_prob, 'max_prob': max_prob, 'k': k}
 
     # spin the dataset
-    paraphrase_dataset(data, N, model_name, max_seq_len, spin_text_args)
-
-    # wikipedia
-    # with 0.5 max_prob
-    # 1000/1000 [15:54<00:00,  1.05it/s]
-    # 5000/5000 [1:21:46<00:00,  1.02it/s]
-    # 2000/2000 [32:21<00:00,  1.03it/s]
-    # 1000/1000 [16:11<00:00,  1.03it/s]
-    # 5000/5000 [1:19:52<00:00,  1.04it/s]
-    # 5000/5000 [1:20:17<00:00,  1.04it/s]
-    # 10000/10000 [2:43:10<00:00,  1.02it/s]
-    # 10000/10000 [2:44:40<00:00,  1.01it/s]
-    # 241/241 [03:45<00:00,  1.07it/s]
-
-    # arxiv
-    # 5000/5000 [1:49:24<00:00,  1.31s/it]
-    # 10000/10000 [3:34:43<00:00,  1.29s/it]
-    # 5967/5967 [2:05:00<00:00,  1.26s/it]
+    paraphrase_dataset(data, N, model_type, max_seq_len, spin_text_args)

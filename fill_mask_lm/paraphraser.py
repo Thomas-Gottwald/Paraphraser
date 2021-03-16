@@ -3,20 +3,63 @@ import spacy
 import re
 import numpy as np
 import pandas as pd
-import random
-from transformers import AutoConfig, AutoTokenizer, AutoModelForMaskedLM
-
-from getPath import get_local_path
 import os
+from transformers import AutoConfig, AutoTokenizer, AutoModelForMaskedLM
+from enum import Enum
+from getPath import get_local_path
 from datetime import datetime
 from typing import Optional
 from tqdm import tqdm
 
-def init_model(model_name_or_path: str, max_len: int, enable_cuda: bool=True):
-    config = AutoConfig.from_pretrained(model_name_or_path)
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, model_max_length=max_len)
+class Data(Enum):
+    """
+    Enum for the three data sets
+    wikipedia, arxiv and thesis
+    """
+    THESIS = 1
+    ARXIV = 2
+    WIKIPEDIA = 3
+
+    def __str__(self):
+        if self is Data.THESIS:
+            return 'thesis'
+        elif self is Data.ARXIV:
+            return 'arxiv'
+        else:
+            return 'wikipedia'
+
+class Model(Enum):
+    """
+    Enum for the mask language models
+    """
+    ROBERTA = 1
+    BART = 2
+    DISTILBERT = 3
+
+    def __str__(self):
+        if self is Model.BART:
+            return 'facebook/bart-large'
+        elif self is Model.DISTILBERT:
+            return 'distilbert-base-multilingual-cased'
+        else:
+            return 'roberta-large'
+
+def init_model(model_type: Model, max_len: int, enable_cuda: bool=True):
+    """
+    Initialize the neural language model and its tokenizer
+
+    Args:
+        model_type: Enum for the mask neural language model
+        max_len: The maximum input length of the model
+        enable_cuda: Wether cuda should be enabled or not
+
+    Return:
+        tokenizer, masked_model: The model tokenizer and the masked language model
+    """
+    config = AutoConfig.from_pretrained(str(model_type))
+    tokenizer = AutoTokenizer.from_pretrained(str(model_type), model_max_length=max_len)
     torch_device = 'cuda' if enable_cuda and torch.cuda.is_available() else 'cpu'
-    masked_model = AutoModelForMaskedLM.from_pretrained(model_name_or_path, config=config).to(torch_device)
+    masked_model = AutoModelForMaskedLM.from_pretrained(str(model_type), config=config).to(torch_device)
 
     return tokenizer, masked_model
 
@@ -24,6 +67,22 @@ def check_token(token: str) -> bool:
     return bool(re.fullmatch(r"[A-Za-z]+([-'][A-Za-z]+)*", token))
 
 def spin_text(text: str, tokenizer, model, mask_prob: float, max_prob: float=0.1, k: int=5, seed: Optional[int]=None) -> (str, pd.DataFrame):
+    """
+    Paraphrases the input text by replacing some of its words
+
+    Args:
+        text: The text to be paraphrased
+        tokenizer: The tokenizer of a masking model
+        model: A masking language model
+        mask_prob: The amount of works to be masked
+        max_prob: The maximum amount of words that can be replaced at once
+        k: How many suggested tokens should be concidered as new tokens
+        seed: A seed for choosing which tokens should be replaced
+
+    Return:
+        spun_text, df: Tha spun paragraph and a DataFrame containing for each replaced word
+        the index, sting and POS of the original token and POS and score of the top-k suggested tokens
+    """
     # split the paragraph into sentences which fit into the model
     # set up the sentencizer
     nlp_sentencizer = spacy.load("en_core_web_sm", disable=["parser", "tagger", "ner"])
@@ -54,7 +113,7 @@ def spin_text(text: str, tokenizer, model, mask_prob: float, max_prob: float=0.1
     spun_paragraphs = []
     # DataFrame is set later
     df = None
-    # shift of the index for texts split intu multiple paragraphs
+    # shift of the index for texts split into multiple paragraphs
     df_index_shift = 0
     for paragraph in paragraphs:
         # fullword tokenization with POS tanging and name entity recognition
@@ -77,9 +136,8 @@ def spin_text(text: str, tokenizer, model, mask_prob: float, max_prob: float=0.1
             if N < len(indices):
                 rest_idc = rng.choice(rest_idc, size=N%max_tokens, replace=False)
             mask_idc = np.append(mask_idc, np.append(rest_idc, (max_tokens-N%max_tokens)*[-1]).reshape(1,-1), axis=0)
-        # if no token was chosen to be masked (for instace if len(indices)==0)
-        if len(mask_idc[-1]) == 0:
-            return None, None
+        # make sure that tokens where chosen to be masked
+        assert len(mask_idc[-1]) > 0, "Found no tokens to mask!"
         mask_idc = np.sort(mask_idc)
         # list for storing the resluting tokens
         memorize_results = []
@@ -242,141 +300,40 @@ def spin_text(text: str, tokenizer, model, mask_prob: float, max_prob: float=0.1
 
     return spun_text, df
 
-def create_sample(sample_size: int, data: list, spin_text_args: list, disguise_sample: bool=False):
-    # set up the language model
-    model_name = 'roberta-large'
-    max_seq_len = 512
-    tokenizer, lm = init_model(model_name, max_seq_len)
-    # the name of the folder to stor this sample
-    sampleFolder = datetime.now().strftime("%Y-%m-%d %H_%M_%S")
-    # set the paths to the data
-    path = get_local_path()
-    data_paths = []
-    for d in data:
-        data_paths.append(os.path.join(path, *['data', d]))
-    # get the original text file names
-    ogfiles = []
-    for dp in data_paths:
-        ogfiles.append([f for f in os.listdir(os.path.join(dp, 'ogUTF-8')) if os.path.isfile(os.path.join(dp, *['ogUTF-8', f]))])
-    # chose the sample files
-    sample_files = set()
-    for i in range(sample_size):
-        chose_data = random.randint(0, 10 * len(data)-1) // 10
-        chose_file = random.sample(ogfiles[chose_data], k=1)[0]
-        sample_files.add((data[chose_data], chose_file))
-    # creating the folder for the sample if not exits
-    if not os.path.exists(os.path.join(path, *['data', 'sample', sampleFolder])):
-        os.makedirs(os.path.join(path, *['data', 'sample', sampleFolder]))
-
-    if disguise_sample:
-        # stores the information in witch order the text occur in the sample files (for disguise_sample=True)
-        logInfo = []
-    # write the samples
-    for d, sf in tqdm(sample_files):
-        # open the sample file
-        sfile_name = sf.replace('ORIG', d.upper())
-        sfile = open(os.path.join(path, *['data', 'sample', sampleFolder, sfile_name]), 'w', encoding='utf-8', newline='\n')
-        # create DataFrame file
-        dffile_name = 'df_' + sfile_name
-        dffile = open(os.path.join(path, *['data', 'sample', sampleFolder, dffile_name]), 'w', encoding='utf-8', newline='\n')
-        # the order in which the different spun_texts and the original text (index -1) are handeld
-        order = [i for i in range(-1, len(spin_text_args))]
-
-        if disguise_sample:
-            # information in witch order the text occur this sample file
-            sfileInfo = [sfile_name]
-            # shuffle the oder (with -1 for the original text)
-            random.shuffle(order)
-
-        for o in order:
-            if disguise_sample:
-                sfileInfo.append(o)# remember the order
-            else:
-                if o == -1:
-                    arg_info_text = "Original Text"
-                else:
-                    arg_info_text = ", ".join(['{}={}'.format(arg, spin_text_args[o][arg]) for arg in spin_text_args[o]])
-                sfile.write(arg_info_text + ": \n\n")
-
-            og_path = os.path.join(data_paths[data.index(d)], *['ogUTF-8', sf])
-            with open(og_path, encoding='utf-8') as file:
-                originalText = file.read()
-            if o == -1:
-                sfile.write(originalText)
-            else:
-                spun_text, df = spin_text(originalText, tokenizer, lm, **spin_text_args[o])
-                sfile.write(spun_text)
-                # Write in the DataFrame file
-                arg_info_text = ", ".join(['{}={}'.format(arg, spin_text_args[o][arg]) for arg in spin_text_args[o]])
-                dffile.write(arg_info_text + ": \n\n")
-                dffile.write(df.sort_values(
-                    ['index', 'top-k'],
-                    key=lambda series : series.astype(int) if series.name == 'index' else series
-                ).to_string())
-                dffile.write('\n\n' + 100*'-' + '\n\n')
-
-            sfile.write('\n\n' + 100*'-' + '\n\n')
-
-        if disguise_sample:
-            logInfo.append(sfileInfo)
-
-        # close the sample file and DataFrame file
-        sfile.close()
-        dffile.close()
-
-    if disguise_sample:
-        # create the Info file where the information for the sample is stored
-        with open(os.path.join(path, *['data', 'sample', sampleFolder, 'Info.txt']), 'w', encoding='utf-8', newline='\n') as file:
-            for info in logInfo:
-                file.write(info[0] + '\n')
-                for i in range(1, len(info)):
-                    if info[i] == -1:
-                        file.write("    original Text\n")
-                    else:
-                        file.write("    " + ", ".join(['{}={}'.format(arg, spin_text_args[info[i]][arg]) for arg in spin_text_args[info[i]]]) + "\n")
-                file.write('\n')
-
 
 if __name__ == '__main__':
 
-    # seed = datetime.now().microsecond
-    # create_sample(
-    #     3,
-    #     ['wikipedia'],
-    #     [{'mask_prob': 0.5, 'max_prob': 0.1, 'k': 5, 'seed': seed}],
-    #     disguise_sample=False
-    # )
-    # quit()
-
-    model_name = 'roberta-large'
+    model_type = Model.BART
     max_seq_len = 512
     mask_prob = 0.5
     k = 5
-    seed = datetime.now().microsecond
-    tokenizer, lm = init_model(model_name, max_seq_len)
+    seed = 464698 # datetime.now().microsecond
+    tokenizer, lm = init_model(model_type, max_seq_len)
 
     # wikipedia
     #232530-ORIG-13.txt
     #1208667-ORIG-4.txt
     #27509373-ORIG-28.txt
-    # path = os.path.join(get_local_path(), *['data', 'wikipedia', 'ogUTF-8', '4115833-ORIG-15.txt'])
+    path = os.path.join(get_local_path(), *['data', 'wikipedia', 'ogUTF-8', '4115833-ORIG-15.txt'])
     # ARXIV
     # 1612.03590-ORIG-6.txt
-    path = os.path.join(get_local_path(), *['data', 'arxiv', 'ogUTF-8', '1612.03590-ORIG-6.txt'])
+    # path = os.path.join(get_local_path(), *['data', 'arxiv', 'ogUTF-8', '1612.03590-ORIG-6.txt'])
     with open(path, 'r', encoding='utf-8') as file:
         toy_sentence = file.read()
     print('')
     print(toy_sentence)
     print('')
 
-    spun_text, df = spin_text(toy_sentence, tokenizer, lm, mask_prob, k=k, seed=seed)
+    try:
+        spun_text, df = spin_text(toy_sentence, tokenizer, lm, mask_prob, k=k, seed=seed)
 
-    print(spun_text)
+        print(spun_text)
+        print(df)
 
-    print(df)
-
-    # with open(os.path.join(get_local_path(), *['data', 'test.txt']), 'w', encoding='utf-8', newline='\n') as file:
-    #     file.write(df.sort_values(
-    #         ['index', 'top-k'],
-    #         key=lambda series : series.astype(int) if series.name == 'index' else series
-    #     ).to_string())
+        # with open(os.path.join(get_local_path(), *['data', f"test_{str(model_type).replace('/','_')}.txt"]), 'w', encoding='utf-8', newline='\n') as file:
+        #     file.write(df.sort_values(
+        #         ['index', 'top-k'],
+        #         key=lambda series : series.astype(int) if series.name == 'index' else series
+        #     ).to_string())
+    except AssertionError as exc:
+        print('AssertionError in spin_text: {}'.format(exc))

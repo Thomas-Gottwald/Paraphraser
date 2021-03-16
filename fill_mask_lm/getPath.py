@@ -9,7 +9,7 @@ def get_local_path():
     cwd = os.getcwd()
     if platform.system() == 'Windows':
         cwd = cwd[0].lower() + cwd[1:]
-    file_name = os.path.join('RoBERTa', 'getPath.py')
+    file_name = os.path.join('fill_mask_lm', 'getPath.py')
     path = os.path.realpath(__file__)
 
     path = path.replace(cwd, '.', 1)
