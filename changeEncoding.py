@@ -1,19 +1,38 @@
 from os import listdir
 from os.path import isfile, join
+import os
+import platform
+from tqdm import tqdm
+
+def get_local_path():
+    """
+    Gives the path form the environment to the Paraphraser folder
+    (in the form "./path/to/environment/")
+    """
+    cwd = os.getcwd()
+    if platform.system() == 'Windows':
+        cwd = cwd[0].lower() + cwd[1:]
+    file_name = 'changeEncoding.py'
+    path = os.path.realpath(__file__)
+
+    path = path.replace(cwd, '.', 1)
+    path = path.replace(file_name, '')
+
+    return path
+
 # arxiv
-# ogpath = r"./Paraphraser/data/arxiv/og"
-# utf8path = r"./Paraphraser/data/arxiv/ogUTF-8"
+# dataset = 'arxiv'
 # thesis
-# ogpath = r"./Paraphraser/data/thesis/og"
-# utf8path = r"./Paraphraser/data/thesis/ogUTF-8"
+# dataset = 'thesis'
 # wikipedia
-ogpath = r"./Paraphraser/data/wikipedia/og"
-utf8path = r"./Paraphraser/data/wikipedia/ogUTF-8"
+dataset = 'wikipedia'
+
+ogpath = os.path.join(get_local_path(), *['data', dataset, 'og'])
+utf8path = os.path.join(get_local_path(), *['data', dataset, 'ogUTF-8'])
 
 ogfiles = [f for f in listdir(ogpath) if isfile(join(ogpath, f))]
 
-
-for i in range(len(ogfiles)):
+for i in tqdm(range(len(ogfiles))):
     try:
         with open(join(ogpath, ogfiles[i]), 'r', encoding='utf-8') as file:
             text = file.read()
@@ -30,7 +49,7 @@ for i in range(len(ogfiles)):
 
 print('Coping finished!\nStar now checking is everything was done right.')
 
-for i in range(len(ogfiles)):
+for i in tqdm(range(len(ogfiles))):
     try:
         with open(join(ogpath, ogfiles[i]), 'r', encoding='utf-8') as file:
             text = file.read()

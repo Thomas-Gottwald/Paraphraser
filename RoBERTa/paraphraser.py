@@ -4,7 +4,7 @@ import re
 import numpy as np
 import pandas as pd
 import random
-from transformers import AutoConfig, AutoTokenizer, AutoModelForMaskedLM
+from transformers import AutoConfig, AutoTokenizer, AutoModelForMaskedLM, AutoModelForCausalLM
 
 from getPath import get_local_path
 import os
@@ -16,7 +16,10 @@ def init_model(model_name_or_path: str, max_len: int, enable_cuda: bool=True):
     config = AutoConfig.from_pretrained(model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, model_max_length=max_len)
     torch_device = 'cuda' if enable_cuda and torch.cuda.is_available() else 'cpu'
-    masked_model = AutoModelForMaskedLM.from_pretrained(model_name_or_path, config=config).to(torch_device)
+    if model_name_or_path == 'xlnet-large-cased':
+        masked_model = AutoModelForCausalLM.from_pretrained(model_name_or_path, config=config).to(torch_device)
+    else:
+        masked_model = AutoModelForMaskedLM.from_pretrained(model_name_or_path, config=config).to(torch_device)
 
     return tokenizer, masked_model
 
@@ -345,12 +348,14 @@ if __name__ == '__main__':
     # )
     # quit()
 
-    model_name = 'roberta-large'
+    model_name = 'xlnet-large-cased' # really bad for unmasking in genearal
+    # model_name = 'facebook/bart-large'
+    # model_name = 'roberta-large'
     max_seq_len = 512
     mask_prob = 0.5
     k = 5
     seed = datetime.now().microsecond
-    tokenizer, lm = init_model(model_name, max_seq_len)
+    tokenizer, lm = init_model(model_name, max_seq_len, enable_cuda=False)
 
     #232530-ORIG-13.txt
     #1208667-ORIG-4.txt
