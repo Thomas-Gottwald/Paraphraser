@@ -4,18 +4,21 @@ import random
 import os
 from datetime import datetime
 from tqdm import tqdm
+from typing import Union
 
 def create_sample(sample_size: int, data: list, spin_text_args: list,
-    model_type: Model=Model.ROBERTA, max_seq_len: int=512,
+    model_type: Union[Model,str]=Model.ROBERTA, max_seq_len: int=512,
     disguise_sample: bool=False):
     """
     Creates a sample of spun texts
 
     Args:
         sample_size: The size of the sample
-        data: List of Dataset Enums
+        data: List of dataset Enums or strings
         spin_text_args: list of arguments for the paraphraser
         model_type: Enum for the mask model for the paraphraser
+            or a string referring to a mask language model that can
+            be loaded by AutoModelForMaskLM from transformers
         max_seq_len: Maximum input size of the model
         disguise_sample: Wether the information if a text was spun or not is stored in the same file as the texts
             or in sepperate log file
@@ -113,6 +116,7 @@ def create_sample(sample_size: int, data: list, spin_text_args: list,
 
 
 if __name__ == '__main__':
+    # using one seed for all sample texts
     seed = datetime.now().microsecond
     create_sample(
         3,

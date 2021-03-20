@@ -3,7 +3,7 @@ from getPath import get_local_path
 import numpy as np
 import pandas as pd
 import os
-from typing import Optional
+from typing import Optional, Union
 from tqdm import tqdm
 
 def add_to_df_dataset(df: pd.DataFrame, df_dataset: Optional[pd.DataFrame]) -> (pd.DataFrame):
@@ -38,14 +38,17 @@ def add_to_df_dataset(df: pd.DataFrame, df_dataset: Optional[pd.DataFrame]) -> (
 
     return df_dataset
 
-def paraphrase_dataset(data: Data, N: int, model_type: Model, max_seq_len: int, spin_text_args: dict):
+def paraphrase_dataset(data: Union[Data,str], N: int, model_type: Union[Model,str], max_seq_len: int, spin_text_args: dict):
     """
     Paraphrases the dataset referred with data
 
     Args:
-        data: Enum for the Datasets (wikipedia, arxiv, thesis)
+        data: Enum for the datasets (wikipedia, arxiv, thesis)
+            or a string reffering to a dataset
         N: The number of files to paraphrase
         model_type: Enum for the mask neural language model
+            or a string referring to a mask language model that can
+            be loaded by AutoModelForMaskLM from transformers
         max_seq_len: The maximum length for input sequences for the model
         spin_text_args: the arguments for the function spin_text besides
             the text to spin, the model tokenizer and the language model
@@ -144,9 +147,9 @@ if __name__ == '__main__':
     # witch data will be paraphrased
     data = Data.WIKIPEDIA
     # how many files should be paraphrased
-    N = 5 #10000
+    N = 10000
     # the masked language model
-    model_type = Model.BART #Model.ROBERTA
+    model_type = Model.ROBERTA
     max_seq_len = 512
     # the parameters for the paraphraser
     mask_prob = 0.5

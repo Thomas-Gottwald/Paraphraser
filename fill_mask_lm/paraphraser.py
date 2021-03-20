@@ -8,7 +8,7 @@ from transformers import AutoConfig, AutoTokenizer, AutoModelForMaskedLM
 from enum import Enum
 from getPath import get_local_path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union
 from tqdm import tqdm
 
 class Data(Enum):
@@ -34,22 +34,21 @@ class Model(Enum):
     """
     ROBERTA = 1
     BART = 2
-    DISTILBERT = 3
 
     def __str__(self):
         if self is Model.BART:
             return 'facebook/bart-large'
-        elif self is Model.DISTILBERT:
-            return 'distilbert-base-multilingual-cased'
         else:
             return 'roberta-large'
 
-def init_model(model_type: Model, max_len: int, enable_cuda: bool=True):
+def init_model(model_type: Union[Model,str], max_len: int, enable_cuda: bool=True):
     """
     Initialize the neural language model and its tokenizer
 
     Args:
         model_type: Enum for the mask neural language model
+            or a string referring to a mask language model that can
+            be loaded by AutoModelForMaskLM from transformers
         max_len: The maximum input length of the model
         enable_cuda: Wether cuda should be enabled or not
 
@@ -302,22 +301,18 @@ def spin_text(text: str, tokenizer, model, mask_prob: float, max_prob: float=0.1
 
 
 if __name__ == '__main__':
+    # Example Code for spinning a paragraph of one of the datasets
 
-    model_type = Model.BART
+    data = 'wikipedia' #Data.WIKIPEDIA
+
+    model_type = 'facebook/bart-large' #Model.BART
     max_seq_len = 512
     mask_prob = 0.5
     k = 5
-    seed = 464698 # datetime.now().microsecond
+    seed = datetime.now().microsecond
     tokenizer, lm = init_model(model_type, max_seq_len)
 
-    # wikipedia
-    #232530-ORIG-13.txt
-    #1208667-ORIG-4.txt
-    #27509373-ORIG-28.txt
-    path = os.path.join(get_local_path(), *['data', 'wikipedia', 'ogUTF-8', '4115833-ORIG-15.txt'])
-    # ARXIV
-    # 1612.03590-ORIG-6.txt
-    # path = os.path.join(get_local_path(), *['data', 'arxiv', 'ogUTF-8', '1612.03590-ORIG-6.txt'])
+    path = os.path.join(get_local_path(), *['data', str(data), 'ogUTF-8', '4115833-ORIG-15.txt'])
     with open(path, 'r', encoding='utf-8') as file:
         toy_sentence = file.read()
     print('')
@@ -329,11 +324,5 @@ if __name__ == '__main__':
 
         print(spun_text)
         print(df)
-
-        # with open(os.path.join(get_local_path(), *['data', f"test_{str(model_type).replace('/','_')}.txt"]), 'w', encoding='utf-8', newline='\n') as file:
-        #     file.write(df.sort_values(
-        #         ['index', 'top-k'],
-        #         key=lambda series : series.astype(int) if series.name == 'index' else series
-        #     ).to_string())
     except AssertionError as exc:
         print('AssertionError in spin_text: {}'.format(exc))
