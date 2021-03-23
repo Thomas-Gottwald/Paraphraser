@@ -21,7 +21,7 @@ def create_sample(sample_size: int, data: list, spin_text_args: list,
             be loaded by AutoModelForMaskLM from transformers
         max_seq_len: Maximum input size of the model
         disguise_sample: Wether the information if a text was spun or not is stored in the same file as the texts
-            or in sepperate log file
+            or in separate log file
     """
     # set up the language model
     tokenizer, lm = init_model(model_type, max_seq_len)
@@ -122,5 +122,6 @@ if __name__ == '__main__':
         3,
         [Data.WIKIPEDIA],
         [{'mask_prob': 0.5, 'max_prob': 0.1, 'k': 5, 'seed': seed}],
+        model_type=Model.ROBERTA,
         disguise_sample=False
     )

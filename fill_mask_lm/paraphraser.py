@@ -9,7 +9,6 @@ from enum import Enum
 from getPath import get_local_path
 from datetime import datetime
 from typing import Optional, Union
-from tqdm import tqdm
 
 class Data(Enum):
     """
@@ -31,6 +30,9 @@ class Data(Enum):
 class Model(Enum):
     """
     Enum for the mask language models
+    
+        ROBERTA: 'roberta-large'
+        BART: 'facebook/bart-large'
     """
     ROBERTA = 1
     BART = 2
@@ -303,9 +305,9 @@ def spin_text(text: str, tokenizer, model, mask_prob: float, max_prob: float=0.1
 if __name__ == '__main__':
     # Example Code for spinning a paragraph of one of the datasets
 
-    data = 'wikipedia' #Data.WIKIPEDIA
+    data = Data.WIKIPEDIA
 
-    model_type = 'facebook/bart-large' #Model.BART
+    model_type = Model.ROBERTA
     max_seq_len = 512
     mask_prob = 0.5
     k = 5
