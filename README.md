@@ -13,13 +13,13 @@ For the project the open source python distribution of [anaconda](https://www.an
 To set up the environment using anaconda
 
 ```setup
-conda env create -f environment_paraphraser.yml
+conda env create -n paraphraser -f environment_paraphraser.yml
 ```
 
 Activate the environment
 
 ```setup
-conda activate myenv
+conda activate paraphraser
 ```
 
 Deactivate an environment
