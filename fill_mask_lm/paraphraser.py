@@ -3,11 +3,8 @@ import spacy
 import re
 import numpy as np
 import pandas as pd
-import os
 from transformers import AutoConfig, AutoTokenizer, AutoModelForMaskedLM
 from enum import Enum
-from getPath import get_local_path
-from datetime import datetime
 from typing import Optional, Union
 
 class Data(Enum):
@@ -300,31 +297,3 @@ def spin_text(text: str, tokenizer, model, mask_prob: float, max_prob: float=0.1
     spun_text = ''.join(spun_paragraphs)
 
     return spun_text, df
-
-
-if __name__ == '__main__':
-    # Example Code for spinning a paragraph of one of the datasets
-
-    data = Data.WIKIPEDIA
-
-    model_type = Model.ROBERTA
-    max_seq_len = 512
-    mask_prob = 0.5
-    k = 5
-    seed = datetime.now().microsecond
-    tokenizer, lm = init_model(model_type, max_seq_len)
-
-    path = os.path.join(get_local_path(), *['data', str(data), 'ogUTF-8', '4115833-ORIG-15.txt'])
-    with open(path, 'r', encoding='utf-8') as file:
-        toy_sentence = file.read()
-    print('')
-    print(toy_sentence)
-    print('')
-
-    try:
-        spun_text, df = spin_text(toy_sentence, tokenizer, lm, mask_prob, k=k, seed=seed)
-
-        print(spun_text)
-        print(df)
-    except AssertionError as exc:
-        print('AssertionError in spin_text: {}'.format(exc))

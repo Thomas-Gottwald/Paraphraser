@@ -1,10 +1,11 @@
-from paraphraser import Data, Model, init_model, spin_text
-from getPath import get_local_path
 import numpy as np
 import pandas as pd
 import os
 from typing import Optional, Union
 from tqdm import tqdm
+
+from .paraphraser import Data, Model, init_model, spin_text
+from .getPath import get_local_path
 
 def add_to_df_dataset(df: pd.DataFrame, df_dataset: Optional[pd.DataFrame]) -> (pd.DataFrame):
     """
@@ -141,21 +142,3 @@ def paraphrase_dataset(data: Union[Data,str], N: int, model_type: Union[Model,st
 
     # store the dataset DataFrame
     df_dataset.to_pickle(os.path.join(sp_path, 'dataset.pkl'))
-
-
-if __name__ == '__main__':
-    # witch data will be paraphrased
-    data = Data.WIKIPEDIA
-    # how many files should be paraphrased
-    N = 10000
-    # the masked language model
-    model_type = Model.ROBERTA
-    max_seq_len = 512
-    # the parameters for the paraphraser
-    mask_prob = 0.5
-    max_prob = 0.1
-    k = 5
-    spin_text_args = {'mask_prob': mask_prob, 'max_prob': max_prob, 'k': k}
-
-    # spin the dataset
-    paraphrase_dataset(data, N, model_type, max_seq_len, spin_text_args)

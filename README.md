@@ -39,7 +39,7 @@ Samples will be stored in Paraphraser/data/sample and when paraphrasing hole dat
 To apply the paraphraser on a single text.
 
 ```python
-from Paraphraser.paraphraser import init_model, spin_text, Model
+from Paraphraser.fill_mask_lm.paraphraser import init_model, spin_text, Model
 
 text = "Some text that should be paraphrased."
 
@@ -50,7 +50,7 @@ seed = 646845
 
 tokenizer, lm = init_model(model_type, max_seq_len, enable_cuda=True)
 
-spun_text, df = spin_text(text, tokenizer, mask_prob, seed=seed)
+spun_text, df = spin_text(text, tokenizer, lm, mask_prob, seed=seed)
 ```
 
 - model_type refers to the masking model used, which can be set via the Enum Model or a string to load the model from [hugging face transformers](https://huggingface.co/models) 
@@ -71,8 +71,8 @@ The sample will contain one file with the original and spun texts and one file c
 When disguise_sample is True the information on the order of the texts in the files is stored in an info file.
 
 ```python
-from Paraphraser.paraphraser import Data, Model
-from Paraphraser.sampling import create_sample
+from Paraphraser.fill_mask_lm.paraphraser import Data, Model
+from Paraphraser.fill_mask_lm.sampling import create_sample
 
 seed = 646845
 create_sample(
@@ -99,8 +99,8 @@ More precise information of the parameters used is stored in parameters.txt.
 And dataset.pkl contains a DataFrame with information on how often for a certain original POS other POS were suggested or chosen and which average scores they had.
 
 ```python
-from Paraphraser.paraphraser import Data, Model
-from Paraphraser.file_paraphraser import paraphrase_datasets
+from Paraphraser.fill_mask_lm.paraphraser import Data, Model
+from Paraphraser.fill_mask_lm.file_paraphraser import paraphrase_dataset
 
 data = Data.WIKIPEDIA
 N = 10000

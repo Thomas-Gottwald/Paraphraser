@@ -1,10 +1,11 @@
-from paraphraser import Data, Model, init_model, spin_text
-from getPath import get_local_path
 import random
 import os
 from datetime import datetime
 from tqdm import tqdm
 from typing import Union
+
+from .paraphraser import Data, Model, init_model, spin_text
+from .getPath import get_local_path
 
 def create_sample(sample_size: int, data: list, spin_text_args: list,
     model_type: Union[Model,str]=Model.ROBERTA, max_seq_len: int=512,
@@ -113,15 +114,3 @@ def create_sample(sample_size: int, data: list, spin_text_args: list,
                     else:
                         file.write("    " + ", ".join(['{}={}'.format(arg, spin_text_args[info[i]][arg]) for arg in spin_text_args[info[i]]]) + "\n")
                 file.write('\n')
-
-
-if __name__ == '__main__':
-    # using one seed for all sample texts
-    seed = datetime.now().microsecond
-    create_sample(
-        3,
-        [Data.WIKIPEDIA],
-        [{'mask_prob': 0.5, 'max_prob': 0.1, 'k': 5, 'seed': seed}],
-        model_type=Model.ROBERTA,
-        disguise_sample=False
-    )
