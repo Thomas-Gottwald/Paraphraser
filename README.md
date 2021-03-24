@@ -2,7 +2,8 @@
 
 This repository contains the implementation of a transformer based paraphrasing tool, which was created for a student project in Applied Neural Language Processing.
 The goal of the project was to implement a transformer based paraphraser and then use it to spin three datasets consisting of wikipedia, arxiv and thesis paragraphs, also
-investigated in the paper [Detecting Machine-obfuscated Plagiarism](https://www.gipp.com/wp-content/papercite-data/pdf/foltynek2020.pdf) (the spun datasets can be accessed [here]()).<br>
+investigated in the paper [Detecting Machine-obfuscated Plagiarism](https://www.gipp.com/wp-content/papercite-data/pdf/foltynek2020.pdf) (the spun datasets can be accessed
+[here](https://zenodo.org/record/4633850#.YFt_uf4xlhF)).<br>
 The basic idea for paraphrasing texts used here is to replace words of the original text with different ones suggested by a masking language model
 (the new tokens are chosen by taking the one with highest score that is not the old token or the old token with different casing).
 
@@ -121,4 +122,4 @@ paraphrase_dataset(data, N, model_type, max_seq_len, spin_text_args)
 
 ## Resources
 
-The in the Project spun datasets (using the language models RoBERTa and BART) can be found on zenodo [here]().
+The in the Project spun datasets (using the language models RoBERTa and BART) can be found on zenodo [here](https://zenodo.org/record/4633850#.YFt_uf4xlhF).
